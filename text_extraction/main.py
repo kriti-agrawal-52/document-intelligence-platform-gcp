@@ -44,15 +44,6 @@ GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "doc-intelligence-1758210325")
 PUBSUB_TOPIC = os.getenv("PUBSUB_TOPIC", "summarization-jobs")
 GCS_BUCKET = os.getenv("GCS_USER_IMAGES_BUCKET", "document-intelligence-user-images")
 
-# --- FastAPI App Initialization ---
-app = FastAPI(
-    title="Text Extraction Service",
-    description="Extracts text and queues summarization jobs.",
-    version="0.3.0",
-    lifespan=lifespan,  # The lifespan manager is defined below
-)
-
-
 # --- Lifespan Manager for Connections ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -102,6 +93,15 @@ async def lifespan(app: FastAPI):
         close_mongo_connection(), close_redis_connection(), close_jwt_blacklist_redis()
     )
     print("Shutdown complete.")
+
+
+# --- FastAPI App Initialization ---
+app = FastAPI(
+    title="Text Extraction Service",
+    description="Extracts text and queues summarization jobs.",
+    version="0.3.0",
+    lifespan=lifespan,  # The lifespan manager is defined above
+)
 
 
 # --- Helper Functions ---
