@@ -161,10 +161,16 @@ jobs:
           kubectl apply -f kubernetes/06-loadbalancer-services.yaml
           kubectl apply -f kubernetes/05-gcp-ingress.yaml
           
-          # Wait for deployments to be ready
-          kubectl wait --for=condition=available --timeout=300s deployment/auth-deployment -n doc-intel-app || true
-          kubectl wait --for=condition=available --timeout=300s deployment/text-extraction-deployment -n doc-intel-app || true
-          kubectl wait --for=condition=available --timeout=300s deployment/text-summarisation-deployment -n doc-intel-app || true
+          # Check deployment status before waiting
+          echo "Checking deployment status..."
+          kubectl get deployments -n doc-intel-app || true
+          kubectl get pods -n doc-intel-app || true
+          
+          # Wait for deployments to be ready (with shorter timeout since images might not be updated yet)
+          echo "Waiting for initial deployments (may fail if images not updated yet)..."
+          kubectl wait --for=condition=available --timeout=60s deployment/auth-deployment -n doc-intel-app || echo "Auth deployment not ready yet (expected)"
+          kubectl wait --for=condition=available --timeout=60s deployment/text-extraction-deployment -n doc-intel-app || echo "Text extraction deployment not ready yet (expected)"
+          kubectl wait --for=condition=available --timeout=60s deployment/text-summarisation-deployment -n doc-intel-app || echo "Text summarization deployment not ready yet (expected)"
 
       # Update Kubernetes deployments with new images
       - name: Update Auth Service deployment
@@ -184,6 +190,36 @@ jobs:
           kubectl set image deployment/text-summarisation-deployment \
             text-summarisation-service=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:${{ github.sha }} \
             --namespace=doc-intel-app
+
+      # Wait for updated deployments and debug any issues
+      - name: Wait for deployments and debug issues
+        run: |
+          echo "Waiting for deployments to be ready with new images..."
+          
+          # Check deployment status
+          kubectl get deployments -n doc-intel-app
+          kubectl describe deployment auth-deployment -n doc-intel-app
+          
+          # Check pod status
+          kubectl get pods -n doc-intel-app
+          
+          # Wait for deployments with longer timeout
+          kubectl wait --for=condition=available --timeout=600s deployment/auth-deployment -n doc-intel-app || {
+            echo "Auth deployment failed, checking logs..."
+            kubectl describe deployment auth-deployment -n doc-intel-app
+            kubectl get pods -l app=auth-service -n doc-intel-app
+            kubectl logs -l app=auth-service -n doc-intel-app --tail=50 || true
+          }
+          
+          kubectl wait --for=condition=available --timeout=300s deployment/text-extraction-deployment -n doc-intel-app || {
+            echo "Text extraction deployment failed, checking logs..."
+            kubectl logs -l app=text-extraction-service -n doc-intel-app --tail=50 || true
+          }
+          
+          kubectl wait --for=condition=available --timeout=300s deployment/text-summarisation-deployment -n doc-intel-app || {
+            echo "Text summarization deployment failed, checking logs..."
+            kubectl logs -l app=text-summarisation-service -n doc-intel-app --tail=50 || true
+          }
 
       # Deploy Frontend to Cloud Run
       - name: Deploy Frontend to Cloud Run
