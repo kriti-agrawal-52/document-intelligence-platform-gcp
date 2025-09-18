@@ -70,7 +70,7 @@ resource "google_storage_bucket" "user_images_bucket" {
 
   # CORS configuration for frontend access (equivalent to AWS S3 CORS)
   cors {
-    origin          = ["http://localhost:3000", "http://localhost:3001", "https://*.run.app"\]
+    origin          = ["http://localhost:3000", "http://localhost:3001", "https://*.run.app"]
     method          = ["GET", "HEAD", "PUT", "POST", "DELETE"]
     response_header = ["*"]
     max_age_seconds = 3000

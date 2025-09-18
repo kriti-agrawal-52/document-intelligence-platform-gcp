@@ -24,7 +24,7 @@ resource "google_project_service" "servicenetworking" {
 resource "google_compute_network" "vpc" {
   name                    = "${var.project_name}-vpc"
   auto_create_subnetworks = false
-  mtu                     = 1460
+  description             = "VPC network for Document Intelligence Platform"
 
   depends_on = [google_project_service.compute]
 }
