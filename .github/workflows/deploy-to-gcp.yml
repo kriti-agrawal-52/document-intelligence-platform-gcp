@@ -74,10 +74,27 @@ jobs:
           docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend
 
       # Deploy Kubernetes manifests
+      - name: Install External Secrets Operator
+        run: |
+          # Install External Secrets Operator using Helm
+          helm repo add external-secrets https://charts.external-secrets.io
+          helm repo update
+          helm upgrade --install external-secrets external-secrets/external-secrets \
+            --namespace external-secrets-system \
+            --create-namespace \
+            --wait
+
       - name: Deploy Kubernetes resources
         run: |
           # Apply Kubernetes manifests in order
           kubectl apply -f kubernetes/00-namespace.yaml
+          
+          # Wait for External Secrets Operator to be ready
+          kubectl wait --for=condition=available --timeout=300s deployment/external-secrets -n external-secrets-system
+          kubectl wait --for=condition=available --timeout=300s deployment/external-secrets-webhook -n external-secrets-system
+          kubectl wait --for=condition=available --timeout=300s deployment/external-secrets-cert-controller -n external-secrets-system
+          
+          # Now apply External Secrets configuration
           kubectl apply -f kubernetes/01-external-secrets.yaml
           kubectl apply -f kubernetes/03-auth-deployment.yaml
           kubectl apply -f kubernetes/04-text-extraction-deployment.yaml
