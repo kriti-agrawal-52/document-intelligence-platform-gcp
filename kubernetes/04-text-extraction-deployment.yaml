@@ -6,7 +6,7 @@ metadata:
   name: text-extraction-deployment
   namespace: doc-intel-app
 spec:
-  replicas: 2
+  replicas: 1  # Reduced for practice app
   selector:
     matchLabels:
       app: text-extraction-service
@@ -69,11 +69,11 @@ spec:
         # Resource limits optimized for t3.medium instances (cost-effective)
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "200m"
+            memory: "256Mi"  # 256 MB RAM
+            cpu: "100m"      # 0.1 CPU cores (reduced from 200m)
           limits:
-            memory: "1Gi"    # Conservative limit for PDF processing
-            cpu: "800m"      # Leave headroom for other services
+            memory: "512Mi"  # 512 MB RAM (reduced from 1Gi)
+            cpu: "500m"      # 0.5 CPU cores (reduced from 800m)
         readinessProbe:
           httpGet:
             path: /extract/health

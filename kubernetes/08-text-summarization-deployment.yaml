@@ -5,7 +5,7 @@ metadata:
   name: text-summarisation-deployment
   namespace: doc-intel-app
 spec:
-  replicas: 2 # Run two workers for high availability
+  replicas: 1  # Reduced for practice app # Run two workers for high availability
   selector:
     matchLabels:
       app: text-summarisation-service
@@ -42,6 +42,14 @@ spec:
             secretKeyRef:
               name: api-keys
               key: OPENAI_API_KEY
+        # Resource requests for lightweight deployment
+        resources:
+          requests:
+            cpu: "100m"      # 0.1 CPU cores
+            memory: "256Mi"  # 256 MB RAM
+          limits:
+            cpu: "500m"      # Max 0.5 CPU cores
+            memory: "512Mi"  # Max 512 MB RAM
         # Health checks for the worker
         livenessProbe:
           httpGet:

@@ -66,6 +66,14 @@ spec:
             secretKeyRef:
               name: api-keys
               key: OPENAI_API_KEY
+        # Resource requests for lightweight deployment
+        resources:
+          requests:
+            cpu: "100m"      # 0.1 CPU cores
+            memory: "256Mi"  # 256 MB RAM
+          limits:
+            cpu: "500m"      # Max 0.5 CPU cores
+            memory: "512Mi"  # Max 512 MB RAM
         readinessProbe:
           httpGet:
             path: /auth/health
