@@ -105,12 +105,30 @@ jobs:
             sleep 10
           done
           
-          # Verify CRDs exist
+          # Verify CRDs exist and check their versions
           kubectl get crd secretstores.external-secrets.io
           kubectl get crd externalsecrets.external-secrets.io
           
-          # Now apply External Secrets configuration
-          kubectl apply -f kubernetes/01-external-secrets.yaml
+          # Check CRD details and available versions
+          echo "Checking SecretStore CRD versions..."
+          kubectl get crd secretstores.external-secrets.io -o jsonpath='{.spec.versions[*].name}' || true
+          echo ""
+          echo "Checking ExternalSecret CRD versions..."
+          kubectl get crd externalsecrets.external-secrets.io -o jsonpath='{.spec.versions[*].name}' || true
+          echo ""
+          
+          # Wait a bit more for API server to fully register the CRDs
+          echo "Waiting additional time for API server to register CRDs..."
+          sleep 30
+          
+          # Test if we can access the API
+          kubectl api-resources | grep external-secrets || true
+          
+          # Try to apply External Secrets configuration, fallback to regular secrets if it fails
+          if ! kubectl apply -f kubernetes/01-external-secrets.yaml; then
+            echo "External Secrets failed, falling back to regular Kubernetes secrets..."
+            kubectl apply -f kubernetes/01-gcp-secrets.yaml
+          fi
           kubectl apply -f kubernetes/03-auth-deployment.yaml
           kubectl apply -f kubernetes/04-text-extraction-deployment.yaml
           kubectl apply -f kubernetes/08-text-summarization-deployment.yaml
