@@ -1,0 +1,237 @@
+name: CI - Development Branch
+
+on:
+  push:
+    branches: [ development ]
+  pull_request:
+    branches: [ development ]
+
+env:
+  PYTHON_VERSION: '3.11'
+  AWS_REGION: ap-south-1
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-asyncio pytest-cov httpx
+        pip install -r user_auth/requirements.txt
+        pip install -r text_extraction/requirements.txt
+        pip install -r text_summarization/requirements.txt
+
+    - name: Set up test environment variables
+      run: |
+        echo "JWT_SECRET_KEY=test-secret-key-for-ci-testing" >> $GITHUB_ENV
+        echo "OPENAI_API_KEY=test-openai-key" >> $GITHUB_ENV
+
+    - name: Run code linting
+      run: |
+        pip install flake8 black isort
+        # Check code formatting
+        black --check --diff .
+        # Check imports sorting
+        isort --check-only --diff .
+        # Run flake8 linting
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run unit tests - Auth Service
+      run: |
+        cd user_auth
+        python -m pytest tests/test_auth_simple.py -v --cov=. --cov-report=xml --cov-report=term-missing
+      continue-on-error: false
+
+    - name: Run unit tests - Text Extraction Service
+      run: |
+        cd text_extraction
+        python -m pytest tests/test_extraction_simple.py -v --cov=. --cov-report=xml --cov-report=term-missing
+      continue-on-error: false
+
+    - name: Run unit tests - Text Summarization Service
+      run: |
+        cd text_summarization
+        python -m pytest tests/test_summarization_simple.py -v --cov=. --cov-report=xml --cov-report=term-missing
+      continue-on-error: false
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./user_auth/coverage.xml,./text_extraction/coverage.xml,./text_summarization/coverage.xml
+        fail_ci_if_error: false
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run security scan with bandit
+      run: |
+        pip install bandit[toml]
+        bandit -r . -f json -o bandit-report.json || true
+        bandit -r . --severity-level medium
+
+    - name: Run dependency vulnerability scan
+      run: |
+        pip install safety
+        safety check --json --output safety-report.json || true
+        safety check
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+
+  frontend-ci:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: '8'
+        run_install: false
+
+    - name: Get pnpm store directory
+      shell: bash
+      run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+    - name: Setup pnpm cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
+
+    - name: Install Dependencies
+      working-directory: ./frontend
+      run: pnpm install --frozen-lockfile
+
+    - name: Lint Code
+      working-directory: ./frontend
+      run: pnpm lint
+
+    - name: Build Application
+      working-directory: ./frontend
+      run: pnpm build
+      env:
+        NEXT_PUBLIC_AUTH_SERVICE_URL: http://localhost:8000
+        NEXT_PUBLIC_EXTRACTION_SERVICE_URL: http://localhost:8001
+        NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL: http://localhost:8002
+
+    - name: Test Frontend Docker Build
+      run: |
+        cd frontend
+        docker build -t frontend:test .
+        echo "✅ Frontend Docker build successful"
+
+  docker-build-test:
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, frontend-ci]
+    
+    strategy:
+      matrix:
+        service: [user_auth, text_extraction, text_summarization]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image - ${{ matrix.service }}
+      run: |
+        docker build -f ${{ matrix.service }}/Dockerfile -t ${{ matrix.service }}:test .
+
+    - name: Test Docker image - ${{ matrix.service }}
+      run: |
+        # Basic smoke test - ensure container starts and health check passes
+        docker run --rm -d --name test-${{ matrix.service }} \
+          -e JWT_SECRET_KEY=test-key \
+          -e OPENAI_API_KEY=test-key \
+          ${{ matrix.service }}:test
+        
+        sleep 10
+        
+        # Check if container is still running
+        docker ps | grep test-${{ matrix.service }}
+        
+        # Cleanup
+        docker stop test-${{ matrix.service }} || true
+
+  terraform-validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ~1.5
+
+    - name: Terraform Format Check
+      run: |
+        cd terraform
+        terraform fmt -check -diff
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init -backend=false
+
+    - name: Terraform Validate
+      run: |
+        cd terraform
+        terraform validate
+
+    - name: Terraform Plan (Dry Run)
+      run: |
+        cd terraform
+        terraform plan -var="aws_region=ap-south-1" \
+                      -var="environment=development" \
+                      -var="openai_api_key=sk-test-key-for-validation" \
+                      -var="jwt_secret_key=test-jwt-secret-for-validation" \
+                      -out=tfplan
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      continue-on-error: true

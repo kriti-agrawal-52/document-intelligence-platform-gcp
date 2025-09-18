@@ -1,0 +1,18 @@
+# Terraform Variables for Document Intelligence Platform on GCP
+# Copy this file to terraform.tfvars and fill in your actual values
+
+# GCP Project Configuration
+gcp_project_id = "doc-intelligence-1758210325"  # Your actual project ID
+gcp_region     = "asia-south1"                  # Or your preferred region
+
+# Project Configuration
+project_name = "document-intelligence"
+environment  = "dev"
+
+# Secrets (NEVER commit these to version control)
+openai_api_key  = "sk-your-openai-api-key-here"           # Get from https://platform.openai.com/api-keys
+jwt_secret_key  = "your-jwt-secret-key-here"              # Generate with: openssl rand -base64 32
+mysql_password  = "your-secure-mysql-password-here"       # Create a strong password
+
+# Optional: Customize zones (default is fine for most cases)
+# gcp_zones = ["asia-south1-a", "asia-south1-b", "asia-south1-c"]
