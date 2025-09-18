@@ -134,7 +134,7 @@ jobs:
               --namespace=doc-intel-app \
               --from-literal=MYSQL_USER="app_user" \
               --from-literal=MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}" \
-              --from-literal=MYSQL_HOST="10.20.0.3" \
+              --from-literal=MYSQL_HOST="10.20.0.5" \
               --from-literal=MYSQL_PORT="3306" \
               --dry-run=client -o yaml | kubectl apply -f -
             
