@@ -18,14 +18,14 @@ from motor.motor_asyncio import AsyncIOMotorCollection
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 # --- Import local modules ---
-from text_extraction_service.database import (close_mongo_connection,
-                                              connect_to_mongo,
-                                              get_extracted_texts_collection)
-from text_extraction_service.redis_cache import (cache_extraction,
-                                                 close_redis_connection,
-                                                 connect_to_redis,
-                                                 get_cached_extraction)
-from text_extraction_service.pdf_processor import create_pdf_processor
+from database import (close_mongo_connection,
+                     connect_to_mongo,
+                     get_extracted_texts_collection)
+from redis_cache import (cache_extraction,
+                        close_redis_connection,
+                        connect_to_redis,
+                        get_cached_extraction)
+from pdf_processor import create_pdf_processor
 
 from shared.auth_utils import get_current_user_id
 from shared.config import get_config, get_env_vars
