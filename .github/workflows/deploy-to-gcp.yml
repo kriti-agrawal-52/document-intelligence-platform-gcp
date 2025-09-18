@@ -94,6 +94,21 @@ jobs:
           kubectl wait --for=condition=available --timeout=300s deployment/external-secrets-webhook -n external-secrets-system
           kubectl wait --for=condition=available --timeout=300s deployment/external-secrets-cert-controller -n external-secrets-system
           
+          # Wait for CRDs to be available
+          echo "Waiting for External Secrets CRDs to be available..."
+          for i in {1..30}; do
+            if kubectl get crd secretstores.external-secrets.io externalsecrets.external-secrets.io &>/dev/null; then
+              echo "CRDs are available!"
+              break
+            fi
+            echo "Waiting for CRDs... ($i/30)"
+            sleep 10
+          done
+          
+          # Verify CRDs exist
+          kubectl get crd secretstores.external-secrets.io
+          kubectl get crd externalsecrets.external-secrets.io
+          
           # Now apply External Secrets configuration
           kubectl apply -f kubernetes/01-external-secrets.yaml
           kubectl apply -f kubernetes/03-auth-deployment.yaml
