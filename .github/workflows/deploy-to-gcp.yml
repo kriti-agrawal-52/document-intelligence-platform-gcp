@@ -73,7 +73,24 @@ jobs:
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest ./frontend
           docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend
 
-      # Update Kubernetes deployments
+      # Deploy Kubernetes manifests
+      - name: Deploy Kubernetes resources
+        run: |
+          # Apply Kubernetes manifests in order
+          kubectl apply -f kubernetes/00-namespace.yaml
+          kubectl apply -f kubernetes/01-external-secrets.yaml
+          kubectl apply -f kubernetes/03-auth-deployment.yaml
+          kubectl apply -f kubernetes/04-text-extraction-deployment.yaml
+          kubectl apply -f kubernetes/08-text-summarization-deployment.yaml
+          kubectl apply -f kubernetes/06-loadbalancer-services.yaml
+          kubectl apply -f kubernetes/05-gcp-ingress.yaml
+          
+          # Wait for deployments to be ready
+          kubectl wait --for=condition=available --timeout=300s deployment/auth-deployment -n doc-intel-app || true
+          kubectl wait --for=condition=available --timeout=300s deployment/text-extraction-deployment -n doc-intel-app || true
+          kubectl wait --for=condition=available --timeout=300s deployment/text-summarisation-deployment -n doc-intel-app || true
+
+      # Update Kubernetes deployments with new images
       - name: Update Auth Service deployment
         run: |
           kubectl set image deployment/auth-deployment \
