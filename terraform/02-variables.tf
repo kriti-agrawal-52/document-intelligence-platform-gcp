@@ -2,42 +2,27 @@
 
 # FILE PURPOSE:
 # Dedicated to declaring all the input variables for the terraform project.
-# using variables makes our code reusable and configurable without needing to change the core resource definitions.
-# We can provide different values for these variables at runtime or define default values. 
+# Using variables makes our code reusable and configurable without needing to change the core resource definitions.
+# We can provide different values for these variables at runtime or define default values.
 
-# -- GCP Project ID variable --
+# -- GCP Project ID Variable --
 variable "gcp_project_id" {
-  description = "The GCP project ID to deploy resources in."
+  description = "The GCP project ID where resources will be deployed"
   type        = string
-  # No default value - must be provided via environment variable or terraform.tfvars
+  default     = "doc-intelligence-1758210325"
 }
 
-# -- GCP Region variable --
+# -- GCP Region Variable --
 variable "gcp_region" {
-  # The `description` provides helpful context about what the variable is for. This
-  # description is shown to the user when they run `terraform plan` or `terraform apply`.
-  description = "The GCP region to deploy the resources in."
-
-  # The `type` constraint ensures that the value provided for this variable is a string.
-  # This helps prevent errors by enforcing data types.
-  type = string
-
-  # The `default` value is used if no other value is provided for this variable when
-  # Terraform is run. This makes the variable optional.
-  default = "asia-south1"
-}
-
-# -- GCP Zones variable --
-variable "gcp_zones" {
-  description = "The GCP zones to use for multi-zone deployments."
-  type        = list(string)
-  default     = ["asia-south1-a", "asia-south1-b", "asia-south1-c"]
+  description = "The GCP region to deploy the resources in"
+  type        = string
+  default     = "asia-south1"
 }
 
 # -- VPC CIDR Block Variable -- 
 # This variable defines the main IP address range for our Virtual Private Cloud (VPC).
 variable "vpc_cidr" {
-  description = "The CIDR block for VPC."
+  description = "The CIDR block for VPC"
   type        = string
   # The "10.0.0.0/16" range provides 65,536 private IP addresses, which is a common
   # standard for a new VPC, offering plenty of room for subnets and resources.
@@ -48,21 +33,21 @@ variable "vpc_cidr" {
 # This variable defines the name of our GKE cluster. It's used in various
 # resource tags and naming conventions throughout the infrastructure.
 variable "cluster_name" {
-  description = "The name of the GKE cluster."
+  description = "The name of the GKE cluster"
   type        = string
-  default     = "document-intelligence"
+  default     = "doc-intel-gke"
 }
 
 # -- Project Name Variable --
 variable "project_name" {
-  description = "The name of the project, used for resource naming."
+  description = "The name of the project, used for resource naming"
   type        = string
   default     = "document-intelligence"
 }
 
 # -- Environment Variable --
 variable "environment" {
-  description = "The deployment environment (e.g., dev, staging, production)."
+  description = "The deployment environment (e.g., dev, staging, production)"
   type        = string
   default     = "dev"
 }
@@ -84,7 +69,7 @@ variable "jwt_secret_key" {
 }
 
 variable "mysql_password" {
-  description = "Password for MySQL database user"
+  description = "Password for the MySQL database"
   type        = string
   sensitive   = true
   # No default value - must be provided via environment variable or terraform.tfvars

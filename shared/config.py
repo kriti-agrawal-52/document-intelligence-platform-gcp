@@ -52,14 +52,12 @@ class AppConfig:
             REDIS_HOST=os.getenv("REDIS_HOST", self.config.databases.redis.host),
             REDIS_PORT=os.getenv("REDIS_PORT", str(self.config.databases.redis.port)),
             REDIS_DB=os.getenv("REDIS_DB", str(self.config.databases.redis.db)),
-            # --- GCP configuration ---
-            GCP_PROJECT_ID=os.getenv("GCP_PROJECT_ID", self.config.gcp.project_id),
-            GCP_REGION=os.getenv("GCP_REGION", self.config.gcp.region),
-            GCS_USER_IMAGES_BUCKET=os.getenv(
-                "GCS_USER_IMAGES_BUCKET", self.config.gcp.storage.user_images_bucket_name
+            # --- AWS configuration ---
+            AWS_REGION=os.getenv("AWS_REGION", self.config.aws.region),
+            S3_USER_IMAGES_BUCKET=os.getenv(
+                "S3_USER_IMAGES_BUCKET", self.config.aws.s3.user_images_bucket_name
             ),
-            PUBSUB_TOPIC_NAME=os.getenv("PUBSUB_TOPIC_NAME", self.config.gcp.pubsub.summarization_topic_name),
-            PUBSUB_SUBSCRIPTION_NAME=os.getenv("PUBSUB_SUBSCRIPTION_NAME", self.config.gcp.pubsub.summarization_subscription_name),
+            SQS_QUEUE_URL=os.getenv("SQS_QUEUE_URL", ""),
         )
 
         # This part constructs the MySQL URL for self.config.databases.mysql.url.

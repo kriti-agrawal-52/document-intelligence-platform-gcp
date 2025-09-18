@@ -1,0 +1,136 @@
+# Cloud Build configuration for Document Intelligence Platform
+# This file defines how to build and push Docker images to Artifact Registry
+
+steps:
+  # Build Auth Service
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-auth-service'
+    args:
+      - 'build'
+      - '-f'
+      - 'user_auth/Dockerfile'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/auth-service:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/auth-service:latest'
+      - '.'
+
+  # Build Text Extraction Service
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-text-extraction-service'
+    args:
+      - 'build'
+      - '-f'
+      - 'text_extraction/Dockerfile'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-extraction-service:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-extraction-service:latest'
+      - '.'
+
+  # Build Text Summarization Service
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-text-summarization-service'
+    args:
+      - 'build'
+      - '-f'
+      - 'text_summarization/Dockerfile'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-summarization-service:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-summarization-service:latest'
+      - '.'
+
+  # Build Frontend Service
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-frontend-service'
+    args:
+      - 'build'
+      - '-f'
+      - 'frontend/Dockerfile'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/frontend:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/frontend:latest'
+      - './frontend'
+
+  # Push all images to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-auth-service'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/auth-service:${SHORT_SHA}'
+    waitFor: ['build-auth-service']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-auth-service-latest'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/auth-service:latest'
+    waitFor: ['build-auth-service']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-text-extraction-service'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-extraction-service:${SHORT_SHA}'
+    waitFor: ['build-text-extraction-service']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-text-extraction-service-latest'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-extraction-service:latest'
+    waitFor: ['build-text-extraction-service']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-text-summarization-service'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-summarization-service:${SHORT_SHA}'
+    waitFor: ['build-text-summarization-service']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-text-summarization-service-latest'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-summarization-service:latest'
+    waitFor: ['build-text-summarization-service']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-frontend-service'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/frontend:${SHORT_SHA}'
+    waitFor: ['build-frontend-service']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-frontend-service-latest'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/frontend:latest'
+    waitFor: ['build-frontend-service']
+
+# Configuration
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+# Substitution variables
+substitutions:
+  _REGION: 'asia-south1'
+  _REPOSITORY: 'document-intelligence-containers'
+
+# Images to be pushed (for build artifacts tracking)
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/auth-service:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/auth-service:latest'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-extraction-service:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-extraction-service:latest'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-summarization-service:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-summarization-service:latest'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/frontend:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/frontend:latest'
+
+# Build timeout
+timeout: '1800s'  # 30 minutes

@@ -1,0 +1,56 @@
+# Database Initialization Job
+# This job runs once to set up the database schema and permissions
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init-job
+  namespace: doc-intel-app
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: db-init
+        image: mysql:8.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Connecting to Cloud SQL MySQL..."
+          mysql -h ${MYSQL_HOST} -P ${MYSQL_PORT} -u ${MYSQL_USER} -p${MYSQL_PASSWORD} -e "
+          -- Grant all privileges on auth_db to auth_user
+          GRANT ALL PRIVILEGES ON auth_db.* TO 'auth_user'@'%';
+          GRANT ALL PRIVILEGES ON auth_db.* TO 'auth_user'@'10.%';
+          FLUSH PRIVILEGES;
+          
+          -- Show grants to verify
+          SHOW GRANTS FOR 'auth_user'@'%';
+          
+          -- Test connection
+          USE auth_db;
+          SHOW TABLES;
+          
+          echo 'Database initialization completed successfully!';
+          "
+        env:
+        - name: MYSQL_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: MYSQL_HOST
+        - name: MYSQL_PORT
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: MYSQL_PORT
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: MYSQL_PASSWORD

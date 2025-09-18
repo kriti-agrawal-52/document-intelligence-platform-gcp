@@ -1,0 +1,48 @@
+# GCP Ingress Configuration for Backend APIs
+# This exposes our backend services through Google Cloud Load Balancer
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: doc-intel-ingress
+  namespace: doc-intel-app
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "doc-intel-ip"
+    networking.gke.io/managed-certificates: "doc-intel-ssl-cert"
+    kubernetes.io/ingress.allow-http: "true"
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /auth/*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: auth-service
+            port:
+              number: 8000
+      - path: /extract/*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: text-extraction-service
+            port:
+              number: 8001
+      - path: /summarize/*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: text-summarization-service
+            port:
+              number: 8002
+
+---
+# Static IP for the load balancer
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingress-config
+  namespace: doc-intel-app
+data:
+  backend-url: "http://LOAD_BALANCER_IP"  # Will be updated after ingress gets IP

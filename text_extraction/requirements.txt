@@ -10,9 +10,9 @@ python-dotenv==1.0.1
 PyYAML==6.0.1
 passlib
 redis==5.0.4
-google-cloud-storage==2.10.0  # Cloud Storage for file uploads
-google-cloud-pubsub==2.18.4   # Pub/Sub for message queuing
-google-cloud-firestore==2.13.1  # Firestore for document storage
+google-cloud-storage==2.10.0  # Google Cloud Storage
+google-cloud-pubsub==2.18.1   # Google Cloud Pub/Sub
+google-auth==2.23.3           # Google Cloud Authentication
 pdf2image==1.17.0  # PDF to image conversion
 Pillow>=10.0.0  # Image processing
 PyPDF2==3.0.1  # PDF metadata extraction

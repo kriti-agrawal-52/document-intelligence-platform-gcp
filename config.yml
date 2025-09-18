@@ -65,20 +65,18 @@ databases:
     db: 0
     cache_ttl_seconds: 86400  # 24 hours for user recent extractions
 
-# GCP Configuration
-gcp:
-  project_id: ""  # Will be set from environment variable
-  region: "asia-south1"
-  storage:
+# AWS Configuration
+aws:
+  region: "ap-south-1"
+  s3:
     user_images_bucket_name: ""  # Will be set from environment variable
     max_file_size_mb: 10
     allowed_extensions: [".jpg", ".jpeg", ".png", ".pdf"]
   
-  pubsub:
-    summarization_topic_name: "summarization-jobs"
-    summarization_subscription_name: "summarization-jobs-subscription"
-    ack_deadline_seconds: 300
-    max_delivery_attempts: 3
+  sqs:
+    summarization_queue_name: "summarization-jobs-queue"
+    visibility_timeout_seconds: 300
+    max_receive_count: 3
 
 # Cache Configuration
 cache:

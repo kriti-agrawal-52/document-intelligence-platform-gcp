@@ -9,14 +9,14 @@ from datetime import datetime, timezone
 from io import BytesIO
 
 import openai
+from google.cloud import storage, pubsub_v1
+from google.auth import default
 from bson import ObjectId 
 from fastapi import (Depends, FastAPI, File, Form, HTTPException, UploadFile,
                      status)
 from motor.motor_asyncio import AsyncIOMotorCollection
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
-from google.cloud import storage, pubsub_v1
-from google.api_core import exceptions as gcp_exceptions
 # --- Import local modules ---
 from text_extraction_service.database import (close_mongo_connection,
                                               connect_to_mongo,
@@ -40,9 +40,9 @@ pubsub_publisher = None
 gcs_client = None
 pdf_processor = None
 # Environment variables
-PUBSUB_TOPIC_NAME = env_vars.PUBSUB_TOPIC_NAME
-GCP_PROJECT_ID = env_vars.GCP_PROJECT_ID
-GCS_BUCKET = env_vars.GCS_USER_IMAGES_BUCKET
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "doc-intelligence-1758210325")
+PUBSUB_TOPIC = os.getenv("PUBSUB_TOPIC", "summarization-jobs")
+GCS_BUCKET = os.getenv("GCS_USER_IMAGES_BUCKET", "document-intelligence-user-images")
 
 # --- FastAPI App Initialization ---
 app = FastAPI(
@@ -56,7 +56,7 @@ app = FastAPI(
 # --- Lifespan Manager for Connections ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global openai_client, sqs_client, s3_client, pdf_processor
+    global openai_client, pubsub_publisher, gcs_client, pdf_processor
 
     # Initialize OpenAI client
     if not env_vars.openai_api_key:
@@ -64,15 +64,19 @@ async def lifespan(app: FastAPI):
     openai_client = openai.AsyncOpenAI(api_key=env_vars.openai_api_key)
     print("OpenAI client initialized.")
 
-    # Initialize SQS client if the URL is configured
-    if SQS_QUEUE_URL:
-        sqs_client = boto3.client("sqs", region_name=AWS_REGION)
-        print(f"SQS client initialized for queue: {SQS_QUEUE_URL}")
-
-    # Initialize S3 client if bucket is configured
-    if S3_BUCKET:
-        s3_client = boto3.client("s3", region_name=AWS_REGION)
-        print(f"S3 client initialized for bucket: {S3_BUCKET}")
+    # Initialize Google Cloud clients
+    try:
+        # Try to get default credentials (works in GCP environments)
+        credentials, project = default()
+        pubsub_publisher = pubsub_v1.PublisherClient(credentials=credentials)
+        gcs_client = storage.Client(credentials=credentials, project=GCP_PROJECT_ID)
+        print(f"GCP clients initialized for project: {GCP_PROJECT_ID}")
+    except Exception as e:
+        print(f"Warning: Could not initialize GCP clients with default credentials: {e}")
+        # Fallback to environment-based authentication
+        pubsub_publisher = pubsub_v1.PublisherClient()
+        gcs_client = storage.Client(project=GCP_PROJECT_ID)
+        print("GCP clients initialized with environment credentials")
 
     # Initialize PDF processor
     if openai_client:
@@ -101,26 +105,31 @@ async def lifespan(app: FastAPI):
 
 
 # --- Helper Functions ---
-async def upload_image_to_s3(image_bytes: bytes, s3_key: str, content_type: str) -> str:
-    """Upload image to S3 and return the S3 URL."""
+async def upload_image_to_gcs(image_bytes: bytes, gcs_key: str, content_type: str) -> str:
+    """Upload image to Google Cloud Storage and return the GCS URL."""
     try:
-        s3_client.put_object(
-            Bucket=S3_BUCKET,
-            Key=s3_key,
-            Body=image_bytes,
-            ContentType=content_type,
-            Metadata={
-                "uploaded_at": datetime.now(timezone.utc).isoformat(),
-                "service": "text-extraction",
-            },
-        )
-        s3_url = f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
-        print(f"Successfully uploaded image to S3: {s3_url}")
-        return s3_url
+        bucket = gcs_client.bucket(GCS_BUCKET)
+        blob = bucket.blob(gcs_key)
+        
+        # Set metadata
+        blob.metadata = {
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "service": "text-extraction",
+        }
+        
+        # Upload the file
+        blob.upload_from_string(image_bytes, content_type=content_type)
+        
+        # Make the blob publicly readable (optional, depending on your security requirements)
+        # blob.make_public()
+        
+        gcs_url = f"gs://{GCS_BUCKET}/{gcs_key}"
+        print(f"Successfully uploaded image to GCS: {gcs_url}")
+        return gcs_url
     except Exception as e:
-        print(f"Failed to upload image to S3: {e}")
+        print(f"Failed to upload image to GCS: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to upload image to S3: {str(e)}"
+            status_code=500, detail=f"Failed to upload image to GCS: {str(e)}"
         )
 
 
@@ -257,26 +266,26 @@ async def extract_text_from_image(
             "extracted_text": "",
             "summary": None,
             "status": "uploading",
-            "s3_url": None,
+            "gcs_url": None,
             "created_at": current_time,
             "updated_at": current_time,
         }
         insert_result = await collection.insert_one(db_document)
         document_id = str(insert_result.inserted_id)
 
-        # Step 3: Upload to S3 with format {user_id}_{document_id}_{image_name}
+        # Step 3: Upload to GCS with format {user_id}_{document_id}_{image_name}
         file_extension = (
             image.filename.split(".")[-1] if "." in image.filename else "jpg"
         )
-        s3_key = f"{user_id}_{document_id}_{image_name}.{file_extension}"
-        s3_url = await upload_image_to_s3(image_bytes, s3_key, image.content_type)
+        gcs_key = f"{user_id}_{document_id}_{image_name}.{file_extension}"
+        gcs_url = await upload_image_to_gcs(image_bytes, gcs_key, image.content_type)
 
-        # Step 4: Update document with S3 URL
+        # Step 4: Update document with GCS URL
         await collection.update_one(
             {"_id": insert_result.inserted_id},
             {
                 "$set": {
-                    "s3_url": s3_url,
+                    "gcs_url": gcs_url,
                     "status": "processing_extraction",
                     "updated_at": datetime.now(timezone.utc),
                 }
@@ -336,19 +345,19 @@ async def extract_text_from_image(
             },
         )
         
-        # Step 7: Send message to SQS for summarization
-        if sqs_client and SQS_QUEUE_URL:
+        # Step 7: Send message to Pub/Sub for summarization
+        if pubsub_publisher and PUBSUB_TOPIC:
             message_body = {
                 "document_id": document_id,
                 "user_id": user_id,
                 "text_to_summarize": extracted_text_result,
             }
-            sqs_client.send_message(
-                QueueUrl=SQS_QUEUE_URL, MessageBody=json.dumps(message_body)
-            )
-            print(f"Sent document ID {document_id} to SQS for summarization.")
+            topic_path = pubsub_publisher.topic_path(GCP_PROJECT_ID, PUBSUB_TOPIC)
+            message_data = json.dumps(message_body).encode('utf-8')
+            future = pubsub_publisher.publish(topic_path, message_data)
+            print(f"Sent document ID {document_id} to Pub/Sub for summarization: {future.result()}")
         else:
-            print("WARNING: SQS client not configured. Summarization job not queued.")
+            print("WARNING: Pub/Sub publisher not configured. Summarization job not queued.")
             # Mark as complete if no summarization is configured
             await collection.update_one(
                 {"_id": insert_result.inserted_id},
@@ -494,18 +503,18 @@ async def extract_text_from_pdf(
         document_id = str(result.inserted_id)
         print(f"Created document record with ID: {document_id}")
 
-        # Step 2: Upload raw PDF to S3
-        s3_key = f"{user_id}_{document_id}_{document_name}.pdf"
-        s3_url = await upload_pdf_to_s3(pdf_content, s3_key)
-        print(f"Uploaded PDF to S3: {s3_url}")
+        # Step 2: Upload raw PDF to GCS
+        gcs_key = f"{user_id}_{document_id}_{document_name}.pdf"
+        gcs_url = await upload_pdf_to_gcs(pdf_content, gcs_key)
+        print(f"Uploaded PDF to GCS: {gcs_url}")
 
-        # Step 3: Update document with S3 URL
+        # Step 3: Update document with GCS URL
         await collection.update_one(
             {"_id": ObjectId(document_id)},
             {
                 "$set": {
-                    "s3_url": s3_url,
-                    "s3_key": s3_key,
+                    "gcs_url": gcs_url,
+                    "gcs_key": gcs_key,
                     "updated_at": datetime.now(timezone.utc),
                 }
             },
@@ -532,20 +541,20 @@ async def extract_text_from_pdf(
             },
         )
 
-        # Step 6: Send message to SQS for summarization
-        if sqs_client and SQS_QUEUE_URL:
-            sqs_message = {
+        # Step 6: Send message to Pub/Sub for summarization
+        if pubsub_publisher and PUBSUB_TOPIC:
+            pubsub_message = {
                 "document_id": document_id,
                 "user_id": user_id,
                 "text_to_summarize": extracted_text,
             }
-            sqs_client.send_message(
-                QueueUrl=SQS_QUEUE_URL, MessageBody=json.dumps(sqs_message)
-            )
-            print(f"Sent SQS message for document {document_id}")
+            topic_path = pubsub_publisher.topic_path(GCP_PROJECT_ID, PUBSUB_TOPIC)
+            message_data = json.dumps(pubsub_message).encode('utf-8')
+            future = pubsub_publisher.publish(topic_path, message_data)
+            print(f"Sent Pub/Sub message for document {document_id}: {future.result()}")
 
         # Step 7: Cache user's recent extractions
-        await cache_user_recent_extractions(user_id, document_id, document_name, s3_url)
+        await cache_user_recent_extractions(user_id, document_id, document_name, gcs_url)
 
         return JobAcceptedResponse(
             message="Text extracted from PDF successfully. Summarization is in progress.",
@@ -592,21 +601,27 @@ async def extract_text_from_pdf(
         )
 
 
-async def upload_pdf_to_s3(pdf_content: bytes, s3_key: str) -> str:
-    """Upload PDF content to S3 and return the URL."""
+async def upload_pdf_to_gcs(pdf_content: bytes, gcs_key: str) -> str:
+    """Upload PDF content to Google Cloud Storage and return the URL."""
     try:
-        s3_client.put_object(
-            Bucket=S3_BUCKET,
-            Key=s3_key,
-            Body=pdf_content,
-            ContentType="application/pdf",
-        )
-        s3_url = f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
-        return s3_url
+        bucket = gcs_client.bucket(GCS_BUCKET)
+        blob = bucket.blob(gcs_key)
+        
+        # Set metadata
+        blob.metadata = {
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "service": "text-extraction",
+        }
+        
+        # Upload the PDF
+        blob.upload_from_string(pdf_content, content_type="application/pdf")
+        
+        gcs_url = f"gs://{GCS_BUCKET}/{gcs_key}"
+        return gcs_url
     except Exception as e:
-        print(f"Failed to upload PDF to S3: {e}")
+        print(f"Failed to upload PDF to GCS: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to upload PDF to S3: {str(e)}"
+            status_code=500, detail=f"Failed to upload PDF to GCS: {str(e)}"
         )
 
 

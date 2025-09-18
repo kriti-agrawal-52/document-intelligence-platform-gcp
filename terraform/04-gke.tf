@@ -25,19 +25,6 @@ resource "google_container_cluster" "gke" {
     services_secondary_range_name = "services"
   }
 
-  # Network policy is automatically enabled in Autopilot mode
-
-  # Private cluster configuration
-  private_cluster_config {
-    enable_private_nodes    = true
-    enable_private_endpoint = false
-    master_ipv4_cidr_block  = "172.16.0.0/28"
-
-    master_global_access_config {
-      enabled = true
-    }
-  }
-
   # Workload Identity for secure access to GCP services
   workload_identity_config {
     workload_pool = "${var.gcp_project_id}.svc.id.goog"
@@ -46,27 +33,6 @@ resource "google_container_cluster" "gke" {
   # Release channel for automatic updates
   release_channel {
     channel = "REGULAR"
-  }
-
-  # Addons are automatically configured in Autopilot mode
-
-  # Logging and monitoring
-  logging_config {
-    enable_components = [
-      "SYSTEM_COMPONENTS",
-      "WORKLOADS"
-    ]
-  }
-
-  monitoring_config {
-    enable_components = [
-      "SYSTEM_COMPONENTS",
-      "WORKLOADS"
-    ]
-
-    managed_prometheus {
-      enabled = true
-    }
   }
 
   # Deletion protection
@@ -93,4 +59,6 @@ resource "google_service_account_iam_binding" "workload_identity_binding" {
     "serviceAccount:${var.gcp_project_id}.svc.id.goog[default/default]",
     "serviceAccount:${var.gcp_project_id}.svc.id.goog[kube-system/default]"
   ]
+
+  depends_on = [google_container_cluster.gke]
 }

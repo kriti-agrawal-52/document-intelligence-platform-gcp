@@ -6,3 +6,4 @@ SQLAlchemy==2.0.30
 mysql-connector-python==8.4.0 # MySQL driver
 python-dotenv==1.0.1 # For loading .env files
 PyYAML==6.0.1 # For loading config.yml
+redis==5.0.4 # For JWT blacklist and caching

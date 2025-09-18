@@ -36,7 +36,7 @@ resource "google_pubsub_subscription" "summarization_jobs_subscription" {
   # Dead letter policy (equivalent to SQS DLQ)
   dead_letter_policy {
     dead_letter_topic     = google_pubsub_topic.summarization_jobs_dlq.id
-    max_delivery_attempts = 3
+    max_delivery_attempts = 5
   }
 
   # Enable exactly once delivery

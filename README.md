@@ -1,57 +1,20 @@
-# 🧠 Document Intelligence Platform
+# 🧠 Document Intelligence Platform - GCP Edition
 
 A production-ready, cloud-native document processing platform built with microservices architecture on Google Cloud Platform, featuring AI-powered text extraction and summarization capabilities.
 
 ## 🏗️ Architecture Overview
 
-```mermaid
-graph TB
-    subgraph "Frontend Layer"
-        WEB[Web Application]
-    end
-    
-    subgraph "Load Balancer"
-        LB[Cloud Load Balancer]
-    end
-    
-    subgraph "Microservices"
-        AUTH[Auth Service<br/>Port 8000]
-        EXTRACT[Text Extraction<br/>Port 8001]
-        SUMMARY[Text Summarization<br/>Port 8002]
-    end
-    
-    subgraph "Data Layer"
-        MYSQL[(Cloud SQL MySQL<br/>User Data)]
-        FIRESTORE[(Firestore<br/>Documents)]
-        REDIS[(Memorystore Redis<br/>Cache & JWT)]
-        GCS[(Cloud Storage<br/>Raw Images)]
-    end
-    
-    subgraph "Message Queue"
-        PUBSUB[Cloud Pub/Sub<br/>Async Processing]
-    end
-    
-    subgraph "AI Services"
-        OPENAI[OpenAI API<br/>GPT-4o-mini]
-    end
-    
-    WEB --> LB
-    LB --> AUTH
-    LB --> EXTRACT
-    LB --> SUMMARY
-    
-    AUTH --> MYSQL
-    AUTH --> REDIS
-    
-    EXTRACT --> FIRESTORE
-    EXTRACT --> REDIS
-    EXTRACT --> GCS
-    EXTRACT --> PUBSUB
-    EXTRACT --> OPENAI
-    
-    SUMMARY --> PUBSUB
-    SUMMARY --> FIRESTORE
-    SUMMARY --> OPENAI
+```
+Google Cloud Platform Stack:
+├── Frontend: Cloud Run (Next.js SPA)
+├── Backend: Google Kubernetes Engine (GKE)
+├── Storage: Cloud Storage (document files)
+├── Messaging: Pub/Sub (async processing)
+├── Databases: Cloud SQL MySQL + Firestore + Redis
+├── Container Registry: Artifact Registry
+├── Secrets: Secret Manager
+├── Build: GitHub Actions CI/CD
+└── Networking: VPC with private/public subnets
 ```
 
 ## ✨ Features
@@ -59,195 +22,107 @@ graph TB
 ### 🔐 **Authentication & Authorization**
 - JWT-based authentication with 2-hour expiration
 - Secure logout with token blacklisting
-- User profile management (update email, username, password)
+- User profile management
 - Password hashing with bcrypt
 
 ### 📄 **Document Processing**
 - **Cloud Storage-first strategy**: Raw images stored securely before processing
 - **AI-powered text extraction** using OpenAI GPT-4o-mini
-- **Asynchronous summarization** via Cloud Pub/Sub message queues
+- **Asynchronous summarization** via Google Pub/Sub message queues
 - **Redis caching** for fast retrieval of recent extractions
 - **Complete lifecycle tracking** with status updates
 
 ### 🚀 **Production-Ready Infrastructure**
 - **Container orchestration** with Google Kubernetes Engine (GKE)
 - **Auto-scaling** based on CPU and queue depth
-- **Load balancing** with Cloud Load Balancer
+- **Load balancing** with Google Cloud Load Balancer
 - **Multi-zone deployment** for high availability
 - **Infrastructure as Code** with Terraform
+- **Automated CI/CD** with GitHub Actions
 
 ## 🛠️ Technology Stack
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
+| **Frontend** | Next.js 14 + TypeScript | Modern SPA with SSR |
 | **Backend** | FastAPI + Python 3.11 | High-performance async APIs |
 | **Authentication** | JWT + Redis | Secure token management |
-| **Databases** | Cloud SQL MySQL + Firestore | Relational & document data |
-| **Caching** | Memorystore Redis | Fast data retrieval |
-| **Message Queue** | Cloud Pub/Sub | Async processing |
-| **Storage** | Cloud Storage | Raw image storage |
+| **Databases** | Cloud SQL MySQL + Firestore + Redis | Multi-model data storage |
+| **Message Queue** | Google Pub/Sub | Async processing |
+| **Storage** | Google Cloud Storage | Raw file storage |
 | **AI Processing** | OpenAI GPT-4o-mini | Text extraction & summarization |
 | **Container Platform** | Google Kubernetes Engine | Kubernetes orchestration |
+| **Container Registry** | Artifact Registry | Docker image storage |
 | **Infrastructure** | Terraform | Infrastructure as Code |
 | **CI/CD** | GitHub Actions | Automated deployments |
 
-## 🚀 Quick Start
+## 🚀 Deployment
 
 ### Prerequisites
 - Google Cloud Platform account with billing enabled
-- Docker and Docker Compose
-- Terraform >= 1.3.2
-- kubectl
-- gcloud CLI
-- Python 3.11+
+- GitHub repository with required secrets configured
+- Terraform >= 1.5.0
+- kubectl CLI tool
 
-### Local Development
+### GitHub Secrets Required
+```
+GCP_SA_KEY: Service account key JSON
+OPENAI_API_KEY: OpenAI API key
+JWT_SECRET_KEY: JWT signing secret
+MYSQL_PASSWORD: Database password
+```
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/your-org/document-intelligence-platform.git
-   cd document-intelligence-platform
-   ```
+### Infrastructure Deployment
+1. **Deploy Infrastructure** (manual trigger):
+   - Go to Actions → Deploy Infrastructure
+   - Select "apply" action
+   - This creates GCP resources via Terraform
 
-2. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+2. **Application Deployment** (automatic on push to main):
+   - Push to main branch triggers automatic deployment
+   - Builds Docker images and deploys to GKE + Cloud Run
 
-3. **Start local services**
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **Run the services**
-   ```bash
-   # Terminal 1: Auth Service
-   cd user_auth && python main.py
-
-   # Terminal 2: Text Extraction Service  
-   cd text_extraction && python main.py
-
-   # Terminal 3: Text Summarization Service
-   cd text_summarization && python main.py
-   ```
-
-### Production Deployment
-
-The application uses GitHub Actions for CI/CD with automatic deployment to AWS EKS.
-
-1. **Fork this repository**
-
-2. **Configure GitHub Secrets**
-   ```
-   AWS_ACCESS_KEY_ID=your_access_key
-   AWS_SECRET_ACCESS_KEY=your_secret_key
-   AWS_ACCOUNT_ID=your_account_id
-   OPENAI_API_KEY=your_openai_key
-   JWT_SECRET_KEY=your_jwt_secret
-   ```
-
-3. **Push to main branch**
-   ```bash
-   git push origin main
-   ```
-
-   This triggers the CD pipeline which:
-   - 🏗️ Provisions AWS infrastructure with Terraform
-   - 🐳 Builds and pushes Docker images to ECR
-   - ☸️ Deploys to EKS cluster
-   - ✅ Runs end-to-end tests
-
-## 📋 API Documentation
-
-### Authentication Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/auth/register` | Register new user |
-| `POST` | `/auth/token` | Login (get JWT token) |
-| `POST` | `/auth/logout` | Logout (invalidate token) |
-| `GET` | `/auth/users/me` | Get user profile |
-| `PUT` | `/auth/users/me` | Update user profile |
-| `POST` | `/auth/users/me/change-password` | Change password |
-
-### Document Processing Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/extract/image_text` | Upload & extract text |
-| `GET` | `/extract/documents` | List user documents |
-| `GET` | `/extract/document/{name}` | Get document details |
-
-### Health Check Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/auth/health` | Auth service health |
-| `GET` | `/extract/health` | Extraction service health |
-| `GET` | `/health` | Summarization service health |
-
-## 🧪 Testing
-
-### Run Tests Locally
+### Manual Deployment
 ```bash
-# Unit tests
-python -m pytest user_auth/tests/ -v
-python -m pytest text_extraction/tests/ -v
-python -m pytest text_summarization/tests/ -v
+# 1. Deploy infrastructure
+cd terraform
+terraform init
+terraform plan
+terraform apply
 
-# Integration tests
-python -m pytest tests/integration/ -v
-
-# End-to-end tests
-API_BASE_URL=http://localhost:8000 python -m pytest tests/e2e/ -v
+# 2. Deploy applications
+kubectl apply -f kubernetes/
 ```
 
-### CI/CD Pipeline
-- ✅ **Development Branch**: Unit tests, integration tests, security scans
-- ✅ **Main Branch**: Full deployment pipeline with E2E tests
+## 📁 Project Structure
 
-## 🏗️ Infrastructure
-
-### AWS Resources Created
-- **EKS Cluster** with managed node groups
-- **RDS MySQL** for user data
-- **DocumentDB** for document storage
-- **ElastiCache Redis** for caching and JWT blacklist
-- **S3 Bucket** for raw image storage
-- **SQS Queue** for async processing
-- **Application Load Balancer** for traffic routing
-- **ECR Repositories** for container images
-
-### Terraform Modules
 ```
-terraform/
-├── 01-main.tf              # Provider configuration
-├── 02-variables.tf         # Input variables
-├── 03-vpc.tf              # VPC and networking
-├── 04-eks.tf              # EKS cluster
-├── 05-databases.tf        # RDS and DocumentDB
-├── 06-ecr.tf              # Container registry
-├── 07-secrets.tf          # AWS Secrets Manager
-├── 08-iam.tf              # IAM roles and policies
-├── 09-outputs.tf          # Output values
-├── 10-redis.tf            # ElastiCache Redis
-├── 11-sqs.tf              # SQS queues
-└── 15-user-images-storage.tf # S3 bucket
+├── frontend/              # Next.js frontend application
+├── user_auth/             # Authentication microservice
+├── text_extraction/       # Text extraction microservice
+├── text_summarization/    # Text summarization microservice
+├── shared/               # Shared utilities and configuration
+├── terraform/            # Infrastructure as Code
+├── kubernetes/           # Kubernetes manifests
+├── .github/workflows/    # GitHub Actions CI/CD
+├── cloudbuild.yaml       # Cloud Build configuration (alternative)
+└── README.md            # This file
 ```
 
 ## 🔒 Security Features
 
 - **🔐 JWT Authentication** with secure logout
 - **🛡️ Token Blacklisting** in Redis
-- **🔒 Secrets Management** with AWS Secrets Manager
+- **🔒 Secrets Management** with Google Secret Manager
 - **🚫 Network Isolation** with VPC private subnets
 - **👤 Non-root Containers** for security
-- **🔍 Security Scanning** in CI pipeline
-- **📊 Audit Logging** with AWS CloudTrail
+- **📊 Audit Logging** with Google Cloud Logging
 
 ## 📊 Monitoring & Observability
 
 - **Health Checks** for all services
 - **Auto-scaling** based on metrics
-- **CloudWatch Metrics** and alarms
+- **Google Cloud Monitoring** and alerting
 - **Container Health Checks** with Docker
 - **Load Balancer Health Checks**
 
@@ -256,29 +131,14 @@ terraform/
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/amazing-feature`
 3. Make your changes and add tests
-4. Run the test suite: `pytest`
-5. Commit your changes: `git commit -m 'Add amazing feature'`
-6. Push to the branch: `git push origin feature/amazing-feature`
-7. Open a Pull Request
+4. Commit your changes: `git commit -m 'Add amazing feature'`
+5. Push to the branch: `git push origin feature/amazing-feature`
+6. Open a Pull Request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
 
 ## 🆘 Support
 
-- 📧 **Email**: support@your-domain.com
-- 📖 **Documentation**: [docs.your-domain.com](https://docs.your-domain.com)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/your-org/document-intelligence-platform/issues)
-
----
-
-**Built with ❤️ for production-scale document intelligence**
-
-## 📄 Latest Features
-- PDF Processing: Upload and extract text from PDF files (up to 10MB, 20 pages)
-- Enhanced document management with file type detection
-- Optimized for cost-effective deployment on t3.medium instances
-
-# Trigger deployment - Tue Sep 16 19:07:13 IST 2025
-- Fixing errors
+For issues and questions, please use the GitHub Issues tab.

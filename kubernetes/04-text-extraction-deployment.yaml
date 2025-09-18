@@ -17,39 +17,45 @@ spec:
     spec:
       containers:
       - name: text-extraction-service
-        image: <aws_account_id>.dkr.ecr.ap-south-1.amazonaws.com/text-extraction-service:latest
+        image: asia-south1-docker.pkg.dev/doc-intelligence-1758210325/document-intelligence-containers/text-extraction-service:latest
         ports:
         - containerPort: 8001
         env:
-        # --- AWS Configuration ---
-        - name: AWS_REGION
-          value: "ap-south-1"
-        - name: SQS_QUEUE_URL
-          value: "<replace-with-sqs-queue-url-from-terraform-output>"
-        - name: S3_USER_IMAGES_BUCKET
-          value: "<replace-with-s3-bucket-name-from-terraform-output>"
+        # --- GCP Configuration ---
+        - name: GCP_PROJECT_ID
+          valueFrom:
+            secretKeyRef:
+              name: gcp-config
+              key: GCP_PROJECT_ID
+        - name: GCP_REGION
+          valueFrom:
+            secretKeyRef:
+              name: gcp-config
+              key: GCP_REGION
+        - name: PUBSUB_TOPIC_NAME
+          valueFrom:
+            secretKeyRef:
+              name: gcp-config
+              key: PUBSUB_TOPIC_NAME
+        - name: GCS_USER_IMAGES_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: gcp-config
+              key: GCS_USER_IMAGES_BUCKET
         # --- Database and Cache Configuration ---
-        - name: MONGODB_HOST
-          value: "docdb-service.doc-intel-app.svc.cluster.local"
-        - name: MONGODB_PORT
-          value: "27017"
         - name: REDIS_HOST
-          value: "redis-service.doc-intel-app.svc.cluster.local"
+          valueFrom:
+            secretKeyRef:
+              name: gcp-config
+              key: REDIS_HOST
         - name: REDIS_PORT
-          value: "6379"
+          valueFrom:
+            secretKeyRef:
+              name: gcp-config
+              key: REDIS_PORT
         - name: REDIS_DB
           value: "0"
         # --- Secrets ---
-        - name: MONGODB_USER
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: MONGODB_USER
-        - name: MONGODB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: MONGODB_PASSWORD
         - name: JWT_SECRET_KEY
           valueFrom:
             secretKeyRef:

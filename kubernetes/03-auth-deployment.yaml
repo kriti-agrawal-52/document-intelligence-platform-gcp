@@ -17,15 +17,21 @@ spec:
     spec:
       containers:
       - name: auth-service
-        image: <aws_account_id>.dkr.ecr.ap-south-1.amazonaws.com/auth-service:latest
+        image: asia-south1-docker.pkg.dev/doc-intelligence-1758210325/document-intelligence-containers/auth-service:latest
         ports:
         - containerPort: 8000
         env:
         # --- Database Configuration ---
         - name: MYSQL_HOST
-          value: "mysql-service.doc-intel-app.svc.cluster.local"
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: MYSQL_HOST
         - name: MYSQL_PORT
-          value: "3306"
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: MYSQL_PORT
         - name: MYSQL_USER
           valueFrom:
             secretKeyRef:
@@ -38,9 +44,15 @@ spec:
               key: MYSQL_PASSWORD
         # --- Redis Configuration (for JWT blacklist) ---
         - name: REDIS_HOST
-          value: "redis-service.doc-intel-app.svc.cluster.local"
+          valueFrom:
+            secretKeyRef:
+              name: gcp-config
+              key: REDIS_HOST
         - name: REDIS_PORT
-          value: "6379"
+          valueFrom:
+            secretKeyRef:
+              name: gcp-config
+              key: REDIS_PORT
         - name: REDIS_DB
           value: "0"
         # --- Secrets ---
@@ -49,6 +61,11 @@ spec:
             secretKeyRef:
               name: api-keys
               key: JWT_SECRET_KEY
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: OPENAI_API_KEY
         readinessProbe:
           httpGet:
             path: /auth/health

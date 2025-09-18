@@ -4,33 +4,36 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 
-import boto3
 import openai
 from bson import ObjectId
 from fastapi import FastAPI, HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
+from google.cloud import pubsub_v1
+from google.auth import default
 
 # --- Configuration ---
 MONGO_CONN_STR = os.getenv("MONGO_CONNECTION_STRING")
 MONGO_DB_NAME = os.getenv("MONGO_DATABASE_NAME", "doc-intel-db")
 MONGO_COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "extracted_texts")
-SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL")
-AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
+GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "doc-intelligence-1758210325")
+PUBSUB_SUBSCRIPTION = os.getenv("PUBSUB_SUBSCRIPTION", "summarization-jobs-subscription")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # --- Global Clients ---
 mongo_client: AsyncIOMotorClient = None
 db_collection = None
 openai_client: openai.AsyncOpenAI = None
-sqs_client = None
+subscriber_client = None
+executor = None
 
 
 # --- Lifespan Manager for Connections ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global mongo_client, db_collection, openai_client, sqs_client
+    global mongo_client, db_collection, openai_client, subscriber_client, executor
     print("Starting up summarization service...")
 
     print(f"Connecting to MongoDB...")
@@ -43,17 +46,29 @@ async def lifespan(app: FastAPI):
     openai_client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
     print("OpenAI client initialized.")
 
-    if not SQS_QUEUE_URL:
-        raise ValueError("SQS_QUEUE_URL is not set.")
-    sqs_client = boto3.client("sqs", region_name=AWS_REGION)
-    print(f"SQS client initialized for queue: {SQS_QUEUE_URL}")
+    # Initialize Google Cloud Pub/Sub subscriber
+    try:
+        # Try to get default credentials (works in GCP environments)
+        credentials, project = default()
+        subscriber_client = pubsub_v1.SubscriberClient(credentials=credentials)
+        print(f"Pub/Sub subscriber client initialized for project: {GCP_PROJECT_ID}")
+    except Exception as e:
+        print(f"Warning: Could not initialize Pub/Sub client with default credentials: {e}")
+        # Fallback to environment-based authentication
+        subscriber_client = pubsub_v1.SubscriberClient()
+        print("Pub/Sub subscriber client initialized with environment credentials")
 
-    print("Starting SQS polling loop...")
-    asyncio.create_task(poll_sqs_queue())
+    # Create thread pool executor for blocking Pub/Sub operations
+    executor = ThreadPoolExecutor(max_workers=4)
+
+    print("Starting Pub/Sub message consumption...")
+    asyncio.create_task(consume_pubsub_messages())
 
     yield
 
     print("Shutting down...")
+    if executor:
+        executor.shutdown(wait=True)
     if mongo_client:
         mongo_client.close()
 
@@ -67,19 +82,20 @@ async def health_check():
     return {"status": "Summarization Service is healthy"}
 
 
-# --- SQS Worker Logic ---
-class SQSMessageBody(BaseModel):
+# --- Pub/Sub Worker Logic ---
+class PubSubMessageBody(BaseModel):
     document_id: str
     user_id: int
     text_to_summarize: str
 
 
-async def process_message(message: dict):
+async def process_pubsub_message(message):
     try:
-        receipt_handle = message["ReceiptHandle"]
-        body_data = json.loads(message["Body"])
+        # Decode the message data
+        message_data = message.data.decode('utf-8')
+        body_data = json.loads(message_data)
 
-        validated_body = SQSMessageBody(**body_data)
+        validated_body = PubSubMessageBody(**body_data)
         doc_id = validated_body.document_id
         text = validated_body.text_to_summarize
 
@@ -99,34 +115,60 @@ async def process_message(message: dict):
         )
         print(f"Successfully summarized and updated document ID: {doc_id}")
 
-        sqs_client.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
-        print(f"Deleted message for document ID: {doc_id} from SQS.")
+        # Acknowledge the message to remove it from the subscription
+        message.ack()
+        print(f"Acknowledged message for document ID: {doc_id}")
 
     except Exception as e:
-        print(f"Error processing message: {e}. Message will be retried or sent to DLQ.")
+        print(f"Error processing message: {e}. Message will be retried.")
+        # Don't acknowledge the message so it will be retried
+        message.nack()
 
 
-async def poll_sqs_queue():
-    while True:
-        try:
-            print("Polling for messages...")
-            response = sqs_client.receive_message(
-                QueueUrl=SQS_QUEUE_URL,
-                MaxNumberOfMessages=5,
-                WaitTimeSeconds=20,
-                MessageAttributeNames=["All"],
-            )
+def message_callback(message):
+    """Callback function for Pub/Sub messages (runs in thread pool)"""
+    try:
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Run the async message processing
+        loop.run_until_complete(process_pubsub_message(message))
+    except Exception as e:
+        print(f"Error in message callback: {e}")
+        message.nack()
+    finally:
+        loop.close()
 
-            messages = response.get("Messages", [])
-            if messages:
-                print(f"Received {len(messages)} messages.")
-                await asyncio.gather(*(process_message(msg) for msg in messages))
-            else:
-                print("No messages received. Waiting...")
-
-        except Exception as e:
-            print(f"An error occurred in the polling loop: {e}")
-            await asyncio.sleep(10)
+async def consume_pubsub_messages():
+    """Start consuming messages from Pub/Sub subscription"""
+    subscription_path = subscriber_client.subscription_path(GCP_PROJECT_ID, PUBSUB_SUBSCRIPTION)
+    
+    print(f"Starting to listen for messages on {subscription_path}")
+    
+    # Configure flow control settings
+    flow_control = pubsub_v1.types.FlowControl(max_messages=5)  # Limit concurrent messages
+    
+    try:
+        # Start pulling messages
+        streaming_pull_future = subscriber_client.subscribe(
+            subscription_path, 
+            callback=message_callback,
+            flow_control=flow_control
+        )
+        
+        print(f"Listening for messages on {subscription_path}...")
+        
+        # Keep the main thread running
+        while True:
+            await asyncio.sleep(1)
+            
+    except KeyboardInterrupt:
+        streaming_pull_future.cancel()
+        print("Pub/Sub message consumption stopped.")
+    except Exception as e:
+        print(f"Error in Pub/Sub consumption: {e}")
+        await asyncio.sleep(10)  # Wait before retrying
 
 
 if __name__ == "__main__":

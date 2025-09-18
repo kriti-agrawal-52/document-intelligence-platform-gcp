@@ -1,0 +1,53 @@
+# LoadBalancer Services for External Access
+# These create Google Cloud Load Balancers for each service
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service-lb
+  namespace: doc-intel-app
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+spec:
+  type: LoadBalancer
+  selector:
+    app: auth-service
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: text-extraction-service-lb
+  namespace: doc-intel-app
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+spec:
+  type: LoadBalancer
+  selector:
+    app: text-extraction-service
+  ports:
+  - port: 80
+    targetPort: 8001
+    protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: text-summarization-service-lb
+  namespace: doc-intel-app
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+spec:
+  type: LoadBalancer
+  selector:
+    app: text-summarization-service
+  ports:
+  - port: 80
+    targetPort: 8002
+    protocol: TCP

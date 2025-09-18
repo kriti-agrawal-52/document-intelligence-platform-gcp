@@ -1,0 +1,119 @@
+name: Deploy to GCP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  PROJECT_ID: doc-intelligence-1758210325
+  REGION: asia-south1
+  REPOSITORY: document-intelligence-containers
+  CLUSTER_NAME: doc-intel-gke
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      id-token: write  # For Workload Identity Federation
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }}
+
+      # Build and push backend services
+      - name: Build and push Auth Service
+        run: |
+          docker build -f user_auth/Dockerfile \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:latest .
+          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service
+
+      - name: Build and push Text Extraction Service
+        run: |
+          docker build -f text_extraction/Dockerfile \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:latest .
+          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service
+
+      - name: Build and push Text Summarization Service
+        run: |
+          docker build -f text_summarization/Dockerfile \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:latest .
+          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service
+
+      - name: Build and push Frontend
+        run: |
+          docker build -f frontend/Dockerfile \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest ./frontend
+          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend
+
+      # Update Kubernetes deployments
+      - name: Update Auth Service deployment
+        run: |
+          kubectl set image deployment/auth-deployment \
+            auth-service=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:${{ github.sha }} \
+            --namespace=doc-intel-app
+
+      - name: Update Text Extraction deployment
+        run: |
+          kubectl set image deployment/text-extraction-deployment \
+            text-extraction-service=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:${{ github.sha }} \
+            --namespace=doc-intel-app
+
+      - name: Update Text Summarization deployment
+        run: |
+          kubectl set image deployment/text-summarisation-deployment \
+            text-summarisation-service=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:${{ github.sha }} \
+            --namespace=doc-intel-app
+
+      # Deploy Frontend to Cloud Run
+      - name: Deploy Frontend to Cloud Run
+        run: |
+          gcloud run deploy frontend \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
+            --platform=managed \
+            --region=${{ env.REGION }} \
+            --allow-unauthenticated \
+            --port=3000 \
+            --memory=1Gi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=10 \
+            --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=https://your-backend-domain.com,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=https://your-backend-domain.com,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=https://your-backend-domain.com"
+
+      # Verify deployments
+      - name: Verify backend deployments
+        run: |
+          kubectl rollout status deployment/auth-deployment --namespace=doc-intel-app --timeout=300s
+          kubectl rollout status deployment/text-extraction-deployment --namespace=doc-intel-app --timeout=300s
+          kubectl rollout status deployment/text-summarisation-deployment --namespace=doc-intel-app --timeout=300s
+
+      - name: Get deployment status
+        run: |
+          echo "=== Backend Services Status ==="
+          kubectl get deployments --namespace=doc-intel-app
+          echo ""
+          echo "=== Frontend Cloud Run Status ==="
+          gcloud run services describe frontend --region=${{ env.REGION }} --format="value(status.url)"
