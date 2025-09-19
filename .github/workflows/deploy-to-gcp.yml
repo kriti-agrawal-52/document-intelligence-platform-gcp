@@ -225,30 +225,53 @@ jobs:
             kubectl logs -l app=text-summarisation-service -n doc-intel-app --tail=50 || true
           }
 
-      # Deploy Frontend to Cloud Run with dynamic ingress IP
-      - name: Deploy Frontend to Cloud Run
+      # Wait for HTTPS ingress to be fully ready before deploying frontend
+      - name: Wait for HTTPS ingress and SSL certificate
         run: |
-          # Get ingress IP dynamically
-          echo "Getting ingress IP address..."
+          echo "⏳ Waiting for ingress LoadBalancer and SSL certificate to be ready..."
+          echo "This ensures frontend can make HTTPS → HTTPS requests without mixed content issues."
+          
+          # Wait for ingress IP assignment (up to 10 minutes)
           INGRESS_IP=""
-          for i in {1..10}; do
+          for i in {1..20}; do
             INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
             if [ ! -z "$INGRESS_IP" ]; then
-              echo "✅ Ingress IP found: $INGRESS_IP"
+              echo "✅ Ingress IP assigned: $INGRESS_IP"
               break
             fi
-            echo "⏳ Waiting for ingress IP... ($i/10)"
+            echo "⏳ Waiting for ingress IP assignment... ($i/20) - 30s intervals"
             sleep 30
           done
           
-          # Fallback to static IP if ingress not ready
           if [ -z "$INGRESS_IP" ]; then
-            echo "⚠️ Ingress IP not ready, using static IP as fallback"
+            echo "⚠️ Ingress IP not ready after 10 minutes, using static IP"
             INGRESS_IP="34.102.207.209"
           fi
           
-          # Deploy frontend with dynamic URLs
-          echo "🚀 Deploying frontend with backend URLs: https://$INGRESS_IP"
+          # Wait for HTTPS to be ready (test SSL certificate)
+          echo "🔒 Testing HTTPS readiness on $INGRESS_IP..."
+          for i in {1..10}; do
+            if curl -s -k https://$INGRESS_IP/auth/health >/dev/null 2>&1; then
+              echo "✅ HTTPS ingress is ready!"
+              break
+            fi
+            echo "⏳ Waiting for HTTPS/SSL certificate... ($i/10) - 30s intervals"
+            sleep 30
+          done
+          
+          # Final test
+          if curl -s -k https://$INGRESS_IP/auth/health >/dev/null 2>&1; then
+            echo "🎉 HTTPS ingress fully operational!"
+            echo "INGRESS_IP=$INGRESS_IP" >> $GITHUB_ENV
+          else
+            echo "⚠️ HTTPS not ready, but proceeding with deployment"
+            echo "INGRESS_IP=$INGRESS_IP" >> $GITHUB_ENV
+          fi
+
+      # Deploy Frontend to Cloud Run with HTTPS ingress
+      - name: Deploy Frontend to Cloud Run
+        run: |
+          echo "🚀 Deploying frontend with HTTPS backend URLs: https://$INGRESS_IP"
           gcloud run deploy frontend \
             --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
             --platform=managed \
