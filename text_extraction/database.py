@@ -38,15 +38,16 @@ async def connect_to_mongo():
     if mongo_user and mongo_password:
         # Construct the URI without credentials for printing
         print_uri = f"mongodb://{mongo_host}:{mongo_port}/"
-        # Create the client with credentials and TLS options
+        # Create the client with credentials (no TLS for local MongoDB)
         _mongo_client = AsyncIOMotorClient(
             host=mongo_host,
             port=int(mongo_port),
             username=mongo_user,
             password=mongo_password,
-            tls=True,
-            tlsCAFile=tls_ca_file,
-            retryWrites=False,  # Required for DocumentDB
+            # Removed TLS settings for local MongoDB deployment
+            # tls=True,
+            # tlsCAFile=tls_ca_file,
+            # retryWrites=False,  # Required for DocumentDB
         )
     else:
         # Fallback for local testing without auth
