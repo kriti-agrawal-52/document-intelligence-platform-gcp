@@ -81,3 +81,12 @@ kubernetes/01-gcp-secrets.yaml
 .LSOverride
 Icon?
 ._*github-actions-key.json
+
+# Security: Never commit these files
+*.tfvars.secret
+*secret*.json
+*key*.json
+.env.local
+.env.secret
+*password*
+*api*key*

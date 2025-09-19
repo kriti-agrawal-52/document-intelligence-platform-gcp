@@ -42,16 +42,13 @@ jobs:
         with:
           terraform_version: 1.5.0
 
-      - name: Create terraform.tfvars
+      - name: Set Terraform environment variables
         run: |
-          cd terraform
-          cat > terraform.tfvars << EOF
-          gcp_project_id = "${{ env.PROJECT_ID }}"
-          gcp_region = "${{ env.REGION }}"
-          openai_api_key = "${{ secrets.OPENAI_API_KEY }}"
-          jwt_secret_key = "${{ secrets.JWT_SECRET_KEY }}"
-          mysql_password = "${{ secrets.MYSQL_PASSWORD }}"
-          EOF
+          echo "TF_VAR_gcp_project_id=${{ env.PROJECT_ID }}" >> $GITHUB_ENV
+          echo "TF_VAR_gcp_region=${{ env.REGION }}" >> $GITHUB_ENV
+          echo "TF_VAR_openai_api_key=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+          echo "TF_VAR_jwt_secret_key=${{ secrets.JWT_SECRET_KEY }}" >> $GITHUB_ENV
+          echo "TF_VAR_mysql_password=${{ secrets.MYSQL_PASSWORD }}" >> $GITHUB_ENV
 
       - name: Terraform Init
         run: |
