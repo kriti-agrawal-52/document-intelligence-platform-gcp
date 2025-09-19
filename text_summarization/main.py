@@ -14,7 +14,12 @@ from pydantic import BaseModel
 from google.cloud import pubsub_v1
 from google.auth import default
 
+from shared.config import get_config
+
 # --- Configuration ---
+config_data = get_config()
+summarization_service_config = config_data.services.text_summarization_service
+
 MONGO_CONN_STR = os.getenv("MONGO_CONNECTION_STRING")
 MONGO_DB_NAME = os.getenv("MONGO_DATABASE_NAME", "doc-intel-db")
 MONGO_COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "extracted_texts")
@@ -77,7 +82,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Text Summarization Service", version="1.0.0", lifespan=lifespan)
 
 
-@app.get("/health", tags=["Health"])
+@app.get(summarization_service_config.base_path + "/health", tags=["Health"])
 async def health_check():
     return {"status": "Summarization Service is healthy"}
 

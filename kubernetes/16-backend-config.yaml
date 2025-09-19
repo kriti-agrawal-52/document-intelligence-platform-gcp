@@ -58,5 +58,5 @@ spec:
     healthyThreshold: 1
     unhealthyThreshold: 3
     type: HTTP
-    requestPath: /health
+    requestPath: /summarize/health
     port: 8002
