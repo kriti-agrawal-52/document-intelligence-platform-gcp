@@ -118,7 +118,7 @@ metadata:
     # Enable NEG for NodePort services used by ingress
     cloud.google.com/neg: '{"ingress": true}'
     # Associate with service-specific BackendConfig
-    cloud.google.com/backend-config: '{"default": "text-extraction-backend-config"}'
+    cloud.google.com/backend-config: '{"ports": {"8001": "text-extraction-backend-config"}}'
 spec:
   type: NodePort
   selector:
