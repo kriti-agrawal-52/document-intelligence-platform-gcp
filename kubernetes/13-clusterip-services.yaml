@@ -9,6 +9,9 @@ metadata:
   namespace: doc-intel-app
   labels:
     app: auth-service
+  annotations:
+    # Disable NEG for ClusterIP services (only ingress needs NEG)
+    cloud.google.com/neg: '{"ingress": false}'
 spec:
   type: ClusterIP
   selector:
@@ -27,6 +30,9 @@ metadata:
   namespace: doc-intel-app
   labels:
     app: text-extraction-service
+  annotations:
+    # Disable NEG for ClusterIP services (only ingress needs NEG)
+    cloud.google.com/neg: '{"ingress": false}'
 spec:
   type: ClusterIP
   selector:
@@ -45,6 +51,9 @@ metadata:
   namespace: doc-intel-app
   labels:
     app: text-summarisation-service
+  annotations:
+    # Remove any LoadBalancer annotations for ClusterIP services
+    cloud.google.com/neg: '{"ingress": false}'
 spec:
   type: ClusterIP
   selector:
