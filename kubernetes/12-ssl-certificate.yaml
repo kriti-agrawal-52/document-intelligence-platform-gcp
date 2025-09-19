@@ -1,0 +1,12 @@
+# Managed SSL Certificate for Ingress
+# Google will automatically provision and manage the SSL certificate
+
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: doc-intel-ssl-cert
+  namespace: doc-intel-app
+spec:
+  domains:
+    - doc-intel-api.example.com  # Replace with your actual domain
+    # For now, we'll use the LoadBalancer IP directly
