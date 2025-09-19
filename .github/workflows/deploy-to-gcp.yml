@@ -154,13 +154,24 @@ jobs:
               --from-literal=PUBSUB_TOPIC_NAME="summarization-jobs" \
               --from-literal=PUBSUB_SUBSCRIPTION_NAME="summarization-jobs-subscription" \
               --dry-run=client -o yaml | kubectl apply -f -
+            
+            kubectl create secret generic mongodb-credentials \
+              --namespace=doc-intel-app \
+              --from-literal=MONGODB_USER="${{ secrets.MONGODB_USER }}" \
+              --from-literal=MONGODB_PASSWORD="${{ secrets.MONGODB_PASSWORD }}" \
+              --from-literal=MONGODB_HOST="mongodb-service" \
+              --from-literal=MONGODB_PORT="27017" \
+              --from-literal=MONGO_CONNECTION_STRING="mongodb://${{ secrets.MONGODB_USER }}:${{ secrets.MONGODB_PASSWORD }}@mongodb-service:27017/doc_intel_db?authSource=admin" \
+              --from-literal=MONGO_DATABASE_NAME="doc_intel_db" \
+              --from-literal=MONGO_COLLECTION_NAME="extracted_texts" \
+              --dry-run=client -o yaml | kubectl apply -f -
           fi
           # Replace IMAGE_TAG placeholder with actual SHA in deployment files
           sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/03-auth-deployment.yaml
           sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/04-text-extraction-deployment.yaml  
           sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/08-text-summarization-deployment.yaml
           
-          kubectl apply -f kubernetes/10-external-mysql-service.yaml
+          kubectl apply -f kubernetes/11-mysql-external-service.yaml
           kubectl apply -f kubernetes/03-auth-deployment.yaml
           kubectl apply -f kubernetes/04-text-extraction-deployment.yaml
           kubectl apply -f kubernetes/08-text-summarization-deployment.yaml

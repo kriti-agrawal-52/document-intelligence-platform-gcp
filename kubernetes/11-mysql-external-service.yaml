@@ -1,0 +1,32 @@
+# MySQL External Service - Clean separation of concerns
+# Provides stable DNS name for Cloud SQL MySQL instance
+
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: mysql-external
+  namespace: doc-intel-app
+  labels:
+    app: mysql-external
+subsets:
+- addresses:
+  - ip: 10.20.0.5  # Cloud SQL private IP
+  ports:
+  - port: 3306
+    name: mysql
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-external
+  namespace: doc-intel-app
+  labels:
+    app: mysql-external
+spec:
+  ports:
+  - port: 3306
+    targetPort: 3306
+    protocol: TCP
+    name: mysql
+  # No selector - uses manual endpoints above

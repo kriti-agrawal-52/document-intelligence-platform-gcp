@@ -23,7 +23,7 @@ spec:
         env:
         # --- Database Configuration ---
         - name: MYSQL_HOST
-          value: "mysql-service.doc-intel-app.svc.cluster.local"
+          value: "mysql-external.doc-intel-app.svc.cluster.local"
         - name: MYSQL_PORT
           valueFrom:
             secretKeyRef:

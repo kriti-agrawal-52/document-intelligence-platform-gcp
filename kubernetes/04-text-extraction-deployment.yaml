@@ -59,22 +59,22 @@ spec:
         - name: MONGODB_HOST
           valueFrom:
             secretKeyRef:
-              name: gcp-config
+              name: mongodb-credentials
               key: MONGODB_HOST
         - name: MONGODB_PORT
           valueFrom:
             secretKeyRef:
-              name: gcp-config
+              name: mongodb-credentials
               key: MONGODB_PORT
         - name: MONGODB_USER
           valueFrom:
             secretKeyRef:
-              name: gcp-config
+              name: mongodb-credentials
               key: MONGODB_USER
         - name: MONGODB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: gcp-config
+              name: mongodb-credentials
               key: MONGODB_PASSWORD
         # --- Secrets ---
         - name: JWT_SECRET_KEY
