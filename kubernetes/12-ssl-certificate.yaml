@@ -8,5 +8,6 @@ metadata:
   namespace: doc-intel-app
 spec:
   domains:
-    - doc-intel-api.example.com  # Replace with your actual domain
-    # For now, we'll use the LoadBalancer IP directly
+    - api.doc-intel.gcp.example.com  # Will be updated when you have a domain
+    # Note: SSL certificates require a domain name, not IP addresses
+    # For IP-only access, we'll rely on kubernetes.io/ingress.allow-http: "true"
