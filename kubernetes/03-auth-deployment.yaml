@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: auth-service
-        image: asia-south1-docker.pkg.dev/doc-intelligence-1758210325/document-intelligence-containers/auth-service:latest
+        image: asia-south1-docker.pkg.dev/doc-intelligence-1758210325/document-intelligence-containers/auth-service:IMAGE_TAG
         ports:
         - containerPort: 8000
         env:

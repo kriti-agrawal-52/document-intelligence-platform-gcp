@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: text-extraction-service
-        image: asia-south1-docker.pkg.dev/doc-intelligence-1758210325/document-intelligence-containers/text-extraction-service:latest
+        image: asia-south1-docker.pkg.dev/doc-intelligence-1758210325/document-intelligence-containers/text-extraction-service:IMAGE_TAG
         ports:
         - containerPort: 8001
         env:

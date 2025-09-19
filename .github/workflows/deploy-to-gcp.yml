@@ -155,6 +155,12 @@ jobs:
               --from-literal=PUBSUB_SUBSCRIPTION_NAME="summarization-jobs-subscription" \
               --dry-run=client -o yaml | kubectl apply -f -
           fi
+          # Replace IMAGE_TAG placeholder with actual SHA in deployment files
+          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/03-auth-deployment.yaml
+          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/04-text-extraction-deployment.yaml  
+          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/08-text-summarization-deployment.yaml
+          
+          kubectl apply -f kubernetes/10-external-mysql-service.yaml
           kubectl apply -f kubernetes/03-auth-deployment.yaml
           kubectl apply -f kubernetes/04-text-extraction-deployment.yaml
           kubectl apply -f kubernetes/08-text-summarization-deployment.yaml
@@ -173,23 +179,8 @@ jobs:
           kubectl wait --for=condition=available --timeout=60s deployment/text-summarisation-deployment -n doc-intel-app || echo "Text summarization deployment not ready yet (expected)"
 
       # Update Kubernetes deployments with new images
-      - name: Update Auth Service deployment
-        run: |
-          kubectl set image deployment/auth-deployment \
-            auth-service=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:${{ github.sha }} \
-            --namespace=doc-intel-app
-
-      - name: Update Text Extraction deployment
-        run: |
-          kubectl set image deployment/text-extraction-deployment \
-            text-extraction-service=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:${{ github.sha }} \
-            --namespace=doc-intel-app
-
-      - name: Update Text Summarization deployment
-        run: |
-          kubectl set image deployment/text-summarisation-deployment \
-            text-summarisation-service=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:${{ github.sha }} \
-            --namespace=doc-intel-app
+      # Deployments are now updated declaratively via kubectl apply above
+      # No need for kubectl set image commands - GitOps approach!
 
       # Wait for updated deployments and debug any issues
       - name: Wait for deployments and debug issues
