@@ -46,6 +46,9 @@ jobs:
         run: |
           echo "TF_VAR_gcp_project_id=${{ env.PROJECT_ID }}" >> $GITHUB_ENV
           echo "TF_VAR_gcp_region=${{ env.REGION }}" >> $GITHUB_ENV
+          echo "TF_VAR_project_name=document-intelligence" >> $GITHUB_ENV
+          echo "TF_VAR_environment=dev" >> $GITHUB_ENV
+          echo "TF_VAR_cluster_name=doc-intel-gke" >> $GITHUB_ENV
           echo "TF_VAR_openai_api_key=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
           echo "TF_VAR_jwt_secret_key=${{ secrets.JWT_SECRET_KEY }}" >> $GITHUB_ENV
           echo "TF_VAR_mysql_password=${{ secrets.MYSQL_PASSWORD }}" >> $GITHUB_ENV

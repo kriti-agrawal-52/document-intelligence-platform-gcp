@@ -86,7 +86,31 @@ Icon?
 *.tfvars.secret
 *secret*.json
 *key*.json
-.env.local
-.env.secret
+*credentials*.json
+.env*
+!.env.example
 *password*
 *api*key*
+*jwt*
+*mysql*
+sk-*
+gcp-sa-key*
+
+# Kubernetes secrets files
+kubernetes/*secrets*.yaml
+kubernetes/*-secrets.yaml
+kubernetes/01-*secrets*.yaml
+kubernetes/*credentials*.yaml
+
+# Terraform sensitive files
+terraform/*.tfvars
+!terraform/*.tfvars.example
+terraform/.terraform/
+terraform/terraform.tfstate*
+terraform/.terraform.lock.hcl
+
+# Backup and temporary files
+*.backup
+*.tmp
+*.bak
+*~

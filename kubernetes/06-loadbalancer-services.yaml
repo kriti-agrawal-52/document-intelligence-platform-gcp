@@ -39,14 +39,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: text-summarization-service-lb
+  name: text-summarisation-service-lb
   namespace: doc-intel-app
   annotations:
     cloud.google.com/neg: '{"ingress": true}'
 spec:
   type: LoadBalancer
   selector:
-    app: text-summarization-service
+    app: text-summarisation-service
   ports:
   - port: 80
     targetPort: 8002

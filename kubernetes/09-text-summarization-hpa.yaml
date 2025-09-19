@@ -1,0 +1,48 @@
+# Text Summarization HPA - Based on Pub/Sub Queue Depth
+# This scales the background worker based on incoming message volume
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: text-summarisation-service-hpa
+  namespace: doc-intel-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: text-summarisation-deployment
+  minReplicas: 1  # Always keep at least 1 worker running
+  maxReplicas: 3  # Scale up to 3 workers for high load
+  metrics:
+  # Scale based on CPU (fallback metric)
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  # TODO: Add Pub/Sub queue depth metric when available
+  # - type: External
+  #   external:
+  #     metric:
+  #       name: pubsub.googleapis.com|subscription|num_undelivered_messages
+  #       selector:
+  #         matchLabels:
+  #           resource.labels.subscription_id: "summarization-jobs-subscription"
+  #     target:
+  #       type: Value
+  #       value: "10"  # Scale up when more than 10 unprocessed messages
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scaling down
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+

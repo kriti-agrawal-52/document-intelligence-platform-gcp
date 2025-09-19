@@ -9,8 +9,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: text-extraction-deployment
-  minReplicas: 2
-  maxReplicas: 5
+  minReplicas: 1  # Reduced for practice app
+  maxReplicas: 1  # Reduced for practice app
   metrics:
   - type: Resource
     resource:

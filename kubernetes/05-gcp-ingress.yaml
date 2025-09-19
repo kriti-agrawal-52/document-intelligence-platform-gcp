@@ -33,7 +33,7 @@ spec:
         pathType: ImplementationSpecific
         backend:
           service:
-            name: text-summarization-service
+            name: text-summarisation-service
             port:
               number: 8002
 

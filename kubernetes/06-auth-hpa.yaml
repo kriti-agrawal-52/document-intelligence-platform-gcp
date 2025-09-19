@@ -10,7 +10,7 @@ spec:
     kind: Deployment
     name: auth-deployment
   minReplicas: 1
-  maxReplicas: 3
+  maxReplicas: 1  # Reduced for practice app
   metrics:
   - type: Resource
     resource:
