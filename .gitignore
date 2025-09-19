@@ -96,11 +96,13 @@ Icon?
 sk-*
 gcp-sa-key*
 
-# Kubernetes secrets files
+# Kubernetes secrets files (but not service files)
 kubernetes/*secrets*.yaml
 kubernetes/*-secrets.yaml
 kubernetes/01-*secrets*.yaml
 kubernetes/*credentials*.yaml
+!kubernetes/*-service.yaml
+!kubernetes/*-external-*.yaml
 
 # Terraform sensitive files
 terraform/*.tfvars

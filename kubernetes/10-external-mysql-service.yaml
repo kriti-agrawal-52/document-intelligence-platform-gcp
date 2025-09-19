@@ -1,0 +1,49 @@
+# External MySQL Service - Provides stable DNS name for Cloud SQL
+# This creates a Kubernetes service that points to the external Cloud SQL instance
+# Allows pods to connect via mysql-service.doc-intel-app.svc.cluster.local
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+  namespace: doc-intel-app
+  labels:
+    app: mysql-external
+spec:
+  type: ExternalName
+  externalName: 10.20.0.5  # Cloud SQL private IP
+  ports:
+  - port: 3306
+    targetPort: 3306
+    protocol: TCP
+    name: mysql
+
+---
+# Alternative approach: Endpoints + Service for more control
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: mysql-service-endpoints
+  namespace: doc-intel-app
+subsets:
+- addresses:
+  - ip: 10.20.0.5  # Cloud SQL private IP
+  ports:
+  - port: 3306
+    name: mysql
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service-endpoints
+  namespace: doc-intel-app
+  labels:
+    app: mysql-external
+spec:
+  ports:
+  - port: 3306
+    targetPort: 3306
+    protocol: TCP
+    name: mysql
+  # No selector - uses manual endpoints above
