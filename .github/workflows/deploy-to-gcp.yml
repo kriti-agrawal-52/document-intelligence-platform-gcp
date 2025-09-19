@@ -234,7 +234,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=10 \
-            --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=https://your-backend-domain.com,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=https://your-backend-domain.com,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=https://your-backend-domain.com"
+            --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=http://34.100.194.109,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=http://34.100.164.68,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=http://35.200.186.61"
 
       # Verify deployments
       - name: Verify backend deployments
