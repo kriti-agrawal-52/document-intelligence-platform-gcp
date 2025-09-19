@@ -27,8 +27,8 @@ spec:
         - name: MONGO_INITDB_ROOT_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: db-credentials
-              key: MYSQL_PASSWORD  # Reuse the same password
+              name: mongodb-credentials
+              key: MONGODB_PASSWORD
         - name: MONGO_INITDB_DATABASE
           value: "doc_intel_db"
         # Resource requests for lightweight deployment
