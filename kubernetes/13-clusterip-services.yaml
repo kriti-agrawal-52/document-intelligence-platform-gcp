@@ -1,5 +1,5 @@
-# ClusterIP Services for Internal Microservice Communication
-# These replace the LoadBalancer services - ingress will handle external access
+# NodePort Services for GCP Ingress Compatibility
+# GCP Ingress requires NodePort or LoadBalancer services (not ClusterIP)
 
 ---
 apiVersion: v1
@@ -10,10 +10,10 @@ metadata:
   labels:
     app: auth-service
   annotations:
-    # Disable NEG for ClusterIP services (only ingress needs NEG)
-    cloud.google.com/neg: '{"ingress": false}'
+    # Enable NEG for NodePort services used by ingress
+    cloud.google.com/neg: '{"ingress": true}'
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: auth-service
   ports:
@@ -31,10 +31,10 @@ metadata:
   labels:
     app: text-extraction-service
   annotations:
-    # Disable NEG for ClusterIP services (only ingress needs NEG)
-    cloud.google.com/neg: '{"ingress": false}'
+    # Enable NEG for NodePort services used by ingress
+    cloud.google.com/neg: '{"ingress": true}'
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: text-extraction-service
   ports:
@@ -55,7 +55,7 @@ metadata:
     # Remove any LoadBalancer annotations for ClusterIP services
     cloud.google.com/neg: '{"ingress": false}'
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: text-summarisation-service
   ports:
