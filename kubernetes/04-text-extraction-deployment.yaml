@@ -102,6 +102,25 @@ spec:
           initialDelaySeconds: 30 # Increased for PDF processing setup
           periodSeconds: 10
           timeoutSeconds: 10
+
+---
+# ClusterIP Service for Text Extraction Service (internal access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: text-extraction-service
+  namespace: doc-intel-app
+  labels:
+    app: text-extraction-service
+spec:
+  type: ClusterIP
+  selector:
+    app: text-extraction-service
+  ports:
+  - port: 8001
+    targetPort: 8001
+    protocol: TCP
+    name: http
         livenessProbe:
           httpGet:
             path: /extract/health

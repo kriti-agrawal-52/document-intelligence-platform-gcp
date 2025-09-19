@@ -1,53 +1,56 @@
-# LoadBalancer Services for External Access
-# These create Google Cloud Load Balancers for each service
+# ClusterIP Services for Internal Microservice Communication
+# These replace the LoadBalancer services - ingress will handle external access
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-service-lb
+  name: auth-service
   namespace: doc-intel-app
-  annotations:
-    cloud.google.com/neg: '{"ingress": true}'
+  labels:
+    app: auth-service
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: auth-service
   ports:
-  - port: 80
+  - port: 8000
     targetPort: 8000
     protocol: TCP
+    name: http
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: text-extraction-service-lb
+  name: text-extraction-service
   namespace: doc-intel-app
-  annotations:
-    cloud.google.com/neg: '{"ingress": true}'
+  labels:
+    app: text-extraction-service
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: text-extraction-service
   ports:
-  - port: 80
+  - port: 8001
     targetPort: 8001
     protocol: TCP
+    name: http
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: text-summarisation-service-lb
+  name: text-summarization-service
   namespace: doc-intel-app
-  annotations:
-    cloud.google.com/neg: '{"ingress": true}'
+  labels:
+    app: text-summarisation-service
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: text-summarisation-service
   ports:
-  - port: 80
+  - port: 8002
     targetPort: 8002
     protocol: TCP
+    name: http

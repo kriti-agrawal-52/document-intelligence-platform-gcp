@@ -19,23 +19,23 @@ spec:
         pathType: ImplementationSpecific
         backend:
           service:
-            name: auth-service-lb
+            name: auth-service
             port:
-              number: 80
+              number: 8000
       - path: /extract/*
         pathType: ImplementationSpecific
         backend:
           service:
-            name: text-extraction-service-lb
+            name: text-extraction-service
             port:
-              number: 80
+              number: 8001
       - path: /summarize/*
         pathType: ImplementationSpecific
         backend:
           service:
-            name: text-summarization-service-lb
+            name: text-summarization-service
             port:
-              number: 80
+              number: 8002
 
 ---
 # Static IP for the load balancer

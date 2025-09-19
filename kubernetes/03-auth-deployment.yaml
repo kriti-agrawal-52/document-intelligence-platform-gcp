@@ -83,6 +83,25 @@ spec:
             port: 8000
           initialDelaySeconds: 15
           periodSeconds: 10
+
+---
+# ClusterIP Service for Auth Service (internal access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: doc-intel-app
+  labels:
+    app: auth-service
+spec:
+  type: ClusterIP
+  selector:
+    app: auth-service
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
 ---
 apiVersion: v1
 kind: Service
