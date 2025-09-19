@@ -171,13 +171,24 @@ jobs:
           sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/04-text-extraction-deployment.yaml  
           sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/08-text-summarization-deployment.yaml
           
+          # Install cert-manager for self-signed certificates
+          echo "📦 Installing cert-manager..."
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+          
+          # Wait for cert-manager to be ready
+          echo "⏳ Waiting for cert-manager to be ready..."
+          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n cert-manager
+          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-webhook -n cert-manager
+          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-cainjector -n cert-manager
+          
+          # Apply our resources
           kubectl apply -f kubernetes/11-mysql-external-service.yaml
           kubectl apply -f kubernetes/09-mongodb-deployment.yaml
           kubectl apply -f kubernetes/13-clusterip-services.yaml
+          kubectl apply -f kubernetes/14-self-signed-certificates.yaml
           kubectl apply -f kubernetes/03-auth-deployment.yaml
           kubectl apply -f kubernetes/04-text-extraction-deployment.yaml
           kubectl apply -f kubernetes/08-text-summarization-deployment.yaml
-          kubectl apply -f kubernetes/12-ssl-certificate.yaml
           kubectl apply -f kubernetes/05-gcp-ingress.yaml
           
           # Check deployment status before waiting

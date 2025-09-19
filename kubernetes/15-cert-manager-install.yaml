@@ -1,0 +1,11 @@
+# cert-manager Installation for Self-Signed Certificates
+# This should be applied before other certificate resources
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+
+---
+# This is a placeholder - cert-manager should be installed via Helm
+# The actual installation will be done in the CD workflow

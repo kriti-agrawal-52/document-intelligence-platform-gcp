@@ -1,0 +1,32 @@
+# Self-Signed Certificate Setup for Development
+# This creates a self-signed certificate that works with IP addresses
+
+---
+# ClusterIssuer for self-signed certificates
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+
+---
+# Certificate resource for the ingress
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: doc-intel-tls
+  namespace: doc-intel-app
+spec:
+  secretName: doc-intel-tls-secret
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+  commonName: "doc-intel-api"
+  dnsNames:
+  - "doc-intel-api"
+  - "api.doc-intel.local"
+  ipAddresses:
+  - "34.102.207.209"  # Our ingress IP
+  duration: 8760h # 1 year
+  renewBefore: 720h # 30 days

@@ -9,9 +9,13 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: "gce"
     kubernetes.io/ingress.global-static-ip-name: "doc-intel-ip"
-    networking.gke.io/managed-certificates: "doc-intel-ssl-cert"
     kubernetes.io/ingress.allow-http: "true"
+    cert-manager.io/cluster-issuer: "selfsigned-issuer"
 spec:
+  tls:
+  - hosts:
+    - "34.102.207.209"
+    secretName: doc-intel-tls-secret
   rules:
   - http:
       paths:
