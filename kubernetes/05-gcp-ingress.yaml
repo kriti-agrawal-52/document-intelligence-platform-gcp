@@ -14,22 +14,22 @@ spec:
   rules:
   - http:
       paths:
-      - path: /auth/*
-        pathType: ImplementationSpecific
+      - path: /auth
+        pathType: Prefix
         backend:
           service:
             name: auth-service
             port:
               number: 8000
-      - path: /extract/*
-        pathType: ImplementationSpecific
+      - path: /extract
+        pathType: Prefix
         backend:
           service:
             name: text-extraction-service
             port:
               number: 8001
-      - path: /summarize/*
-        pathType: ImplementationSpecific
+      - path: /summarize
+        pathType: Prefix
         backend:
           service:
             name: text-summarization-service
