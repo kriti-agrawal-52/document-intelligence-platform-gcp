@@ -171,21 +171,10 @@ jobs:
           sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/04-text-extraction-deployment.yaml  
           sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/08-text-summarization-deployment.yaml
           
-          # Install cert-manager for self-signed certificates
-          echo "📦 Installing cert-manager..."
-          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-          
-          # Wait for cert-manager to be ready
-          echo "⏳ Waiting for cert-manager to be ready..."
-          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n cert-manager
-          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-webhook -n cert-manager
-          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-cainjector -n cert-manager
-          
-          # Apply our resources
+          # Apply Kubernetes resources (HTTP-only for simplicity)
           kubectl apply -f kubernetes/11-mysql-external-service.yaml
           kubectl apply -f kubernetes/09-mongodb-deployment.yaml
           kubectl apply -f kubernetes/13-clusterip-services.yaml
-          kubectl apply -f kubernetes/14-self-signed-certificates.yaml
           kubectl apply -f kubernetes/03-auth-deployment.yaml
           kubectl apply -f kubernetes/04-text-extraction-deployment.yaml
           kubectl apply -f kubernetes/08-text-summarization-deployment.yaml
@@ -259,30 +248,25 @@ jobs:
             INGRESS_IP="34.102.207.209"
           fi
           
-          # Wait for HTTPS to be ready (test SSL certificate)
-          echo "🔒 Testing HTTPS readiness on $INGRESS_IP..."
-          for i in {1..10}; do
-            if curl -s -k https://$INGRESS_IP/auth/health >/dev/null 2>&1; then
-              echo "✅ HTTPS ingress is ready!"
+          # Test HTTP ingress readiness (simpler approach)
+          echo "🔍 Testing HTTP ingress readiness on $INGRESS_IP..."
+          for i in {1..5}; do
+            if curl -s http://$INGRESS_IP/auth/health >/dev/null 2>&1; then
+              echo "✅ HTTP ingress is ready!"
               break
             fi
-            echo "⏳ Waiting for HTTPS/SSL certificate... ($i/10) - 30s intervals"
+            echo "⏳ Waiting for HTTP ingress... ($i/5) - 30s intervals"
             sleep 30
           done
           
-          # Final test
-          if curl -s -k https://$INGRESS_IP/auth/health >/dev/null 2>&1; then
-            echo "🎉 HTTPS ingress fully operational!"
-            echo "INGRESS_IP=$INGRESS_IP" >> $GITHUB_ENV
-          else
-            echo "⚠️ HTTPS not ready, but proceeding with deployment"
-            echo "INGRESS_IP=$INGRESS_IP" >> $GITHUB_ENV
-          fi
+          # Set environment variable for frontend deployment
+          echo "INGRESS_IP=$INGRESS_IP" >> $GITHUB_ENV
 
-      # Deploy Frontend to Cloud Run with HTTPS ingress
+      # Deploy Frontend to Cloud Run with HTTP ingress (development setup)
       - name: Deploy Frontend to Cloud Run
         run: |
-          echo "🚀 Deploying frontend with HTTPS backend URLs: https://$INGRESS_IP"
+          echo "🚀 Deploying frontend with HTTP backend URLs: http://$INGRESS_IP"
+          echo "Note: Using HTTP for development - no SSL complexity"
           gcloud run deploy frontend \
             --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
             --platform=managed \
@@ -293,7 +277,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=10 \
-            --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=https://$INGRESS_IP,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=https://$INGRESS_IP,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=https://$INGRESS_IP"
+            --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=http://$INGRESS_IP"
 
       # Verify deployments
       - name: Verify backend deployments
