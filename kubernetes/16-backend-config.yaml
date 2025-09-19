@@ -1,0 +1,62 @@
+# BackendConfig for GCP Ingress
+# Configures timeouts and health checks for backend services
+
+---
+# Auth Service BackendConfig
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: auth-backend-config
+  namespace: doc-intel-app
+spec:
+  timeoutSec: 60
+  connectionDraining:
+    drainingTimeoutSec: 60
+  healthCheck:
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /auth/health
+    port: 8000
+
+---
+# Text Extraction BackendConfig
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: text-extraction-backend-config
+  namespace: doc-intel-app
+spec:
+  timeoutSec: 60
+  connectionDraining:
+    drainingTimeoutSec: 60
+  healthCheck:
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /extract/health
+    port: 8001
+
+---
+# Text Summarization BackendConfig
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: text-summarization-backend-config
+  namespace: doc-intel-app
+spec:
+  timeoutSec: 60
+  connectionDraining:
+    drainingTimeoutSec: 60
+  healthCheck:
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    type: HTTP
+    requestPath: /health
+    port: 8002

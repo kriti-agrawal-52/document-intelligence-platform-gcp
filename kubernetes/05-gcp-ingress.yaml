@@ -7,10 +7,10 @@ metadata:
   name: doc-intel-ingress
   namespace: doc-intel-app
   annotations:
-    kubernetes.io/ingress.class: "gce"
     kubernetes.io/ingress.global-static-ip-name: "doc-intel-ip"
     kubernetes.io/ingress.allow-http: "true"
 spec:
+  ingressClassName: "gce"
   rules:
   - http:
       paths:
