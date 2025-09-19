@@ -175,7 +175,6 @@ jobs:
           kubectl apply -f kubernetes/11-mysql-external-service.yaml
           kubectl apply -f kubernetes/09-mongodb-deployment.yaml
           kubectl apply -f kubernetes/16-backend-config.yaml
-          kubectl apply -f kubernetes/13-nodeport-services.yaml
           kubectl apply -f kubernetes/03-auth-deployment.yaml
           kubectl apply -f kubernetes/04-text-extraction-deployment.yaml
           kubectl apply -f kubernetes/08-text-summarization-deployment.yaml

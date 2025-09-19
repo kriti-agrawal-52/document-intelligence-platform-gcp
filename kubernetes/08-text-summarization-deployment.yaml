@@ -71,7 +71,31 @@ spec:
         # Health checks for the worker
         livenessProbe:
           httpGet:
-            path: /health
+            path: /summarize/health
             port: 8002
           initialDelaySeconds: 30
           periodSeconds: 15
+
+---
+# NodePort Service for Text Summarization Service (required for GCP Ingress)
+apiVersion: v1
+kind: Service
+metadata:
+  name: text-summarization-service
+  namespace: doc-intel-app
+  labels:
+    app: text-summarisation-service
+  annotations:
+    # Enable NEG for NodePort services used by ingress
+    cloud.google.com/neg: '{"ingress": true}'
+    # Associate with service-specific BackendConfig
+    cloud.google.com/backend-config: '{"default": "text-summarization-backend-config"}'
+spec:
+  type: NodePort
+  selector:
+    app: text-summarisation-service
+  ports:
+  - port: 8002
+    targetPort: 8002
+    protocol: TCP
+    name: http

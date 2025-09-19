@@ -106,7 +106,7 @@ spec:
           timeoutSeconds: 10
 
 ---
-# ClusterIP Service for Text Extraction Service (internal access)
+# NodePort Service for Text Extraction Service (required for GCP Ingress)
 apiVersion: v1
 kind: Service
 metadata:
@@ -114,8 +114,13 @@ metadata:
   namespace: doc-intel-app
   labels:
     app: text-extraction-service
+  annotations:
+    # Enable NEG for NodePort services used by ingress
+    cloud.google.com/neg: '{"ingress": true}'
+    # Associate with service-specific BackendConfig
+    cloud.google.com/backend-config: '{"default": "text-extraction-backend-config"}'
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: text-extraction-service
   ports:

@@ -87,7 +87,7 @@ spec:
           periodSeconds: 10
 
 ---
-# ClusterIP Service for Auth Service (internal access)
+# NodePort Service for Auth Service (required for GCP Ingress)
 apiVersion: v1
 kind: Service
 metadata:
@@ -95,8 +95,13 @@ metadata:
   namespace: doc-intel-app
   labels:
     app: auth-service
+  annotations:
+    # Enable NEG for NodePort services used by ingress
+    cloud.google.com/neg: '{"ingress": true}'
+    # Associate with service-specific BackendConfig
+    cloud.google.com/backend-config: '{"default": "auth-backend-config"}'
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: auth-service
   ports:
