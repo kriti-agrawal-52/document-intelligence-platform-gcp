@@ -248,16 +248,27 @@ jobs:
             INGRESS_IP="34.102.207.209"
           fi
           
-          # Test HTTP ingress readiness (simpler approach)
+          # Test HTTP ingress readiness with extended timeout
           echo "🔍 Testing HTTP ingress readiness on $INGRESS_IP..."
-          for i in {1..5}; do
-            if curl -s http://$INGRESS_IP/auth/health >/dev/null 2>&1; then
+          echo "💡 Note: GCP Load Balancer health checks can take 10-15 minutes to propagate"
+          
+          INGRESS_READY=false
+          for i in {1..15}; do
+            echo "⏳ Waiting for HTTP ingress... ($i/15) - 30s intervals (Total: $((i*30/60)) min)"
+            if curl -s -w "%{http_code}" http://$INGRESS_IP/auth/health 2>/dev/null | grep -q "200"; then
               echo "✅ HTTP ingress is ready!"
+              INGRESS_READY=true
               break
             fi
-            echo "⏳ Waiting for HTTP ingress... ($i/5) - 30s intervals"
             sleep 30
           done
+          
+          if [ "$INGRESS_READY" = false ]; then
+            echo "⚠️  Ingress not ready after 7.5 minutes, but continuing deployment"
+            echo "🔍 This is normal for GCP - health checks may take up to 15 minutes"
+            echo "📋 Backend health status:"
+            kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.metadata.annotations.ingress\.kubernetes\.io/backends}' || true
+          fi
           
           # Set environment variable for frontend deployment
           echo "INGRESS_IP=$INGRESS_IP" >> $GITHUB_ENV
@@ -279,12 +290,128 @@ jobs:
             --max-instances=10 \
             --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=http://$INGRESS_IP"
 
-      # Verify deployments
-      - name: Verify backend deployments
+      # Verify deployments with comprehensive ALB/Ingress debugging
+      - name: Verify backend deployments and ALB status
         run: |
+          echo "🔍 COMPREHENSIVE BACKEND & ALB VERIFICATION"
+          echo "=========================================="
+          
+          # 1. Verify deployment rollout status
+          echo "📋 1. Checking deployment rollout status..."
           kubectl rollout status deployment/auth-deployment --namespace=doc-intel-app --timeout=300s
           kubectl rollout status deployment/text-extraction-deployment --namespace=doc-intel-app --timeout=300s
           kubectl rollout status deployment/text-summarisation-deployment --namespace=doc-intel-app --timeout=300s
+          
+          # 2. Check pod health and readiness
+          echo ""
+          echo "🏥 2. Pod Health Status:"
+          kubectl get pods -n doc-intel-app -o wide
+          
+          # 3. Check service configurations
+          echo ""
+          echo "🌐 3. Service Configurations:"
+          kubectl get services -n doc-intel-app
+          
+          # 4. Comprehensive Ingress Debugging
+          echo ""
+          echo "🔍 4. INGRESS & ALB DEBUGGING:"
+          echo "=============================="
+          
+          # Basic ingress info
+          echo "📋 Ingress Basic Info:"
+          kubectl get ingress -n doc-intel-app
+          
+          # Detailed ingress description
+          echo ""
+          echo "📋 Ingress Detailed Status:"
+          kubectl describe ingress doc-intel-ingress -n doc-intel-app
+          
+          # Backend health status
+          echo ""
+          echo "❤️  Backend Health Status:"
+          kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.metadata.annotations.ingress\.kubernetes\.io/backends}' | python3 -c "
+          import sys, json
+          try:
+              data = json.loads(sys.stdin.read())
+              print('Backend Health Status:')
+              for backend, status in data.items():
+                  service_name = backend.split('-')[-3:-1]  # Extract service name
+                  print(f'  - {\"_\".join(service_name)}: {status}')
+          except:
+              print('  Could not parse backend status')
+          " || echo "  Backend status not available yet"
+          
+          # Check ingress events
+          echo ""
+          echo "📋 Recent Ingress Events:"
+          kubectl get events -n doc-intel-app --field-selector involvedObject.name=doc-intel-ingress --sort-by='.lastTimestamp' | tail -10 || true
+          
+          # 5. Test connectivity to individual services
+          echo ""
+          echo "🧪 5. SERVICE CONNECTIVITY TESTS:"
+          echo "================================="
+          
+          # Get ingress IP
+          INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "34.102.207.209")
+          echo "🌐 Testing via Ingress IP: $INGRESS_IP"
+          
+          # Test each service endpoint
+          for service in "auth:8000:/auth/health" "extract:8001:/extract/health" "summarize:8002:/summarize/health"; do
+            name=$(echo $service | cut -d: -f1)
+            path=$(echo $service | cut -d: -f3)
+            echo ""
+            echo "Testing $name service at $path..."
+            
+            # Test with detailed curl output
+            response=$(curl -s -w "HTTPSTATUS:%{http_code};TIME:%{time_total}" http://$INGRESS_IP$path 2>/dev/null || echo "HTTPSTATUS:000;TIME:timeout")
+            http_code=$(echo $response | grep -o "HTTPSTATUS:[0-9]*" | cut -d: -f2)
+            time_total=$(echo $response | grep -o "TIME:[0-9.]*" | cut -d: -f2)
+            response_body=$(echo $response | sed 's/HTTPSTATUS:[0-9]*;TIME:[0-9.]*//')
+            
+            if [ "$http_code" = "200" ]; then
+              echo "  ✅ $name: HTTP $http_code (${time_total}s) - $response_body"
+            else
+              echo "  ❌ $name: HTTP $http_code (${time_total}s)"
+            fi
+          done
+          
+          # 6. Check for common GCP Load Balancer issues
+          echo ""
+          echo "🔍 6. GCP LOAD BALANCER DIAGNOSTICS:"
+          echo "===================================="
+          
+          # Check if services have proper annotations
+          echo "📋 Service Annotations Check:"
+          for service in auth-service text-extraction-service text-summarization-service; do
+            echo "  Checking $service annotations..."
+            kubectl get service $service -n doc-intel-app -o jsonpath='{.metadata.annotations}' | python3 -c "
+            import sys, json
+            try:
+                data = json.loads(sys.stdin.read())
+                neg = data.get('cloud.google.com/neg', 'MISSING')
+                backend_config = data.get('cloud.google.com/backend-config', 'MISSING')
+                print(f'    NEG: {neg}')
+                print(f'    BackendConfig: {backend_config}')
+            except:
+                print('    Could not parse annotations')
+            " || echo "    Service not found or no annotations"
+          done
+          
+          # 7. Final status summary
+          echo ""
+          echo "📊 7. FINAL STATUS SUMMARY:"
+          echo "=========================="
+          echo "🏗️  Deployments: $(kubectl get deployments -n doc-intel-app --no-headers | wc -l) total"
+          echo "🏥 Ready Pods: $(kubectl get pods -n doc-intel-app --no-headers | grep -c Running) running"
+          echo "🌐 Services: $(kubectl get services -n doc-intel-app --no-headers | wc -l) total"
+          echo "🔗 Ingress IP: $INGRESS_IP"
+          
+          # Check if any pods are not ready
+          not_ready=$(kubectl get pods -n doc-intel-app --no-headers | grep -v "1/1.*Running" | wc -l)
+          if [ $not_ready -gt 0 ]; then
+            echo "⚠️  Warning: $not_ready pods are not ready"
+            kubectl get pods -n doc-intel-app | grep -v "1/1.*Running" || true
+          fi
 
       - name: Get deployment status
         run: |
