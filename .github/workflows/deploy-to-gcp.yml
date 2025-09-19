@@ -177,6 +177,7 @@ jobs:
           kubectl apply -f kubernetes/04-text-extraction-deployment.yaml
           kubectl apply -f kubernetes/08-text-summarization-deployment.yaml
           kubectl apply -f kubernetes/06-loadbalancer-services.yaml
+          kubectl apply -f kubernetes/12-ssl-certificate.yaml
           kubectl apply -f kubernetes/05-gcp-ingress.yaml
           
           # Check deployment status before waiting
@@ -224,9 +225,30 @@ jobs:
             kubectl logs -l app=text-summarisation-service -n doc-intel-app --tail=50 || true
           }
 
-      # Deploy Frontend to Cloud Run
+      # Deploy Frontend to Cloud Run with dynamic ingress IP
       - name: Deploy Frontend to Cloud Run
         run: |
+          # Get ingress IP dynamically
+          echo "Getting ingress IP address..."
+          INGRESS_IP=""
+          for i in {1..10}; do
+            INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            if [ ! -z "$INGRESS_IP" ]; then
+              echo "✅ Ingress IP found: $INGRESS_IP"
+              break
+            fi
+            echo "⏳ Waiting for ingress IP... ($i/10)"
+            sleep 30
+          done
+          
+          # Fallback to static IP if ingress not ready
+          if [ -z "$INGRESS_IP" ]; then
+            echo "⚠️ Ingress IP not ready, using static IP as fallback"
+            INGRESS_IP="34.102.207.209"
+          fi
+          
+          # Deploy frontend with dynamic URLs
+          echo "🚀 Deploying frontend with backend URLs: https://$INGRESS_IP"
           gcloud run deploy frontend \
             --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
             --platform=managed \
@@ -237,7 +259,7 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=10 \
-            --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=https://34.102.207.209,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=https://34.102.207.209,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=https://34.102.207.209"
+            --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=https://$INGRESS_IP,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=https://$INGRESS_IP,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=https://$INGRESS_IP"
 
       # Verify deployments
       - name: Verify backend deployments
