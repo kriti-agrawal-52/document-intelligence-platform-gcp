@@ -10,9 +10,10 @@ resource "google_project_service" "sql_admin" {
   service = "sqladmin.googleapis.com"
 }
 
-resource "google_project_service" "firestore" {
-  service = "firestore.googleapis.com"
-}
+# Firestore API not needed - using Kubernetes MongoDB instead
+# resource "google_project_service" "firestore" {
+#   service = "firestore.googleapis.com"
+# }
 
 resource "google_project_service" "redis" {
   service = "redis.googleapis.com"
@@ -72,16 +73,11 @@ resource "google_sql_user" "mysql_user" {
   password = var.mysql_password
 }
 
-# --- Firestore Database ---
-# This replaces AWS DocumentDB and provides the document database for storing extracted text
-resource "google_firestore_database" "document_db" {
-  project     = var.gcp_project_id
-  name        = "(default)"
-  location_id = var.gcp_region
-  type        = "FIRESTORE_NATIVE"
-
-  depends_on = [google_project_service.firestore]
-}
+# --- MongoDB Database ---
+# Note: We deploy MongoDB as a Kubernetes pod instead of using Firestore
+# This maintains compatibility with existing application code that expects MongoDB
+# For production, consider migrating to Firestore or using MongoDB Atlas
+# MongoDB deployment is handled in kubernetes/09-mongodb-deployment.yaml
 
 # --- Redis Instance ---
 # This replaces AWS ElastiCache and provides caching and JWT blacklist functionality

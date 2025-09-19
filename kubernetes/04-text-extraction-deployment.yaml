@@ -55,6 +55,17 @@ spec:
               key: REDIS_PORT
         - name: REDIS_DB
           value: "0"
+        # --- MongoDB Configuration ---
+        - name: MONGODB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: gcp-config
+              key: MONGODB_HOST
+        - name: MONGODB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: gcp-config
+              key: MONGODB_PORT
         # --- Secrets ---
         - name: JWT_SECRET_KEY
           valueFrom:

@@ -36,6 +36,22 @@ spec:
             secretKeyRef:
               name: gcp-config
               key: PUBSUB_SUBSCRIPTION_NAME
+        # --- MongoDB Configuration ---
+        - name: MONGO_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-credentials
+              key: MONGO_CONNECTION_STRING
+        - name: MONGO_DATABASE_NAME
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-credentials
+              key: MONGO_DATABASE_NAME
+        - name: MONGO_COLLECTION_NAME
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-credentials
+              key: MONGO_COLLECTION_NAME
         # --- Secrets ---
         - name: OPENAI_API_KEY
           valueFrom:
