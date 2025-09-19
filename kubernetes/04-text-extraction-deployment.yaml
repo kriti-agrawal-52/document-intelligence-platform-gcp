@@ -121,24 +121,3 @@ spec:
     targetPort: 8001
     protocol: TCP
     name: http
-        livenessProbe:
-          httpGet:
-            path: /extract/health
-            port: 8001
-          initialDelaySeconds: 60 # Increased for PDF processing setup
-          periodSeconds: 15
-          timeoutSeconds: 10
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: text-extraction-service
-  namespace: doc-intel-app
-spec:
-  selector:
-    app: text-extraction-service
-  ports:
-  - protocol: TCP
-    port: 8001
-    targetPort: 8001
-  type: ClusterIP

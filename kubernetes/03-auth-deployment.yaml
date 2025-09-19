@@ -102,17 +102,3 @@ spec:
     targetPort: 8000
     protocol: TCP
     name: http
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: auth-service
-  namespace: doc-intel-app
-spec:
-  selector:
-    app: auth-service
-  ports:
-  - protocol: TCP
-    port: 8000
-    targetPort: 8000
-  type: ClusterIP
