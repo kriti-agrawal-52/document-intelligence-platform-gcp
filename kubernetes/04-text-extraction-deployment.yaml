@@ -7,6 +7,8 @@ metadata:
   namespace: doc-intel-app
 spec:
   replicas: 1  # Reduced for practice app
+  strategy:
+    type: Recreate  # Terminate old pod before creating new one (prevents resource conflicts)
   selector:
     matchLabels:
       app: text-extraction-service
