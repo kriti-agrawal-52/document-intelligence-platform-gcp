@@ -14,6 +14,7 @@ from google.auth import default
 from bson import ObjectId 
 from fastapi import (Depends, FastAPI, File, Form, HTTPException, UploadFile,
                      status)
+from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorCollection
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
@@ -101,6 +102,19 @@ app = FastAPI(
     description="Extracts text and queues summarization jobs.",
     version="0.3.0",
     lifespan=lifespan,  # The lifespan manager is defined above
+)
+
+# Add CORS middleware to allow frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://frontend-84709503622.asia-south1.run.app",  # Production frontend
+        "http://localhost:3000",  # Local development
+        "http://localhost:3001",  # Alternative local port
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 
