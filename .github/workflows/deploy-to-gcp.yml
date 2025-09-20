@@ -181,10 +181,20 @@ jobs:
             --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
             --dry-run=client -o yaml | kubectl apply -f -
           
+          # Get Redis IP from Terraform outputs
+          cd terraform
+          REDIS_HOST=$(terraform output -raw redis_host 2>/dev/null || echo "10.190.0.3")
+          REDIS_PORT=$(terraform output -raw redis_port 2>/dev/null || echo "6379")
+          USER_IMAGES_BUCKET=$(terraform output -raw user_images_bucket_name 2>/dev/null || echo "document-intelligence-user-images-bucket")
+          cd ..
+          
           kubectl create secret generic gcp-config \
             --namespace=doc-intel-app \
             --from-literal=GCP_PROJECT_ID="${{ env.PROJECT_ID }}" \
             --from-literal=GCP_REGION="${{ env.REGION }}" \
+            --from-literal=REDIS_HOST="$REDIS_HOST" \
+            --from-literal=REDIS_PORT="$REDIS_PORT" \
+            --from-literal=GCS_USER_IMAGES_BUCKET="$USER_IMAGES_BUCKET" \
             --from-literal=PUBSUB_TOPIC_NAME="summarization-jobs" \
             --from-literal=PUBSUB_SUBSCRIPTION_NAME="summarization-jobs-subscription" \
             --dry-run=client -o yaml | kubectl apply -f -
@@ -372,16 +382,6 @@ jobs:
               --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
               --dry-run=client -o yaml | kubectl apply -f -
             
-            kubectl create secret generic gcp-config \
-              --namespace=doc-intel-app \
-              --from-literal=GCP_PROJECT_ID="${{ env.PROJECT_ID }}" \
-              --from-literal=GCP_REGION="${{ env.REGION }}" \
-              --from-literal=REDIS_HOST="10.20.1.3" \
-              --from-literal=REDIS_PORT="6379" \
-              --from-literal=GCS_USER_IMAGES_BUCKET="document-intelligence-user-images-8jpemsgr" \
-              --from-literal=PUBSUB_TOPIC_NAME="summarization-jobs" \
-              --from-literal=PUBSUB_SUBSCRIPTION_NAME="summarization-jobs-subscription" \
-              --dry-run=client -o yaml | kubectl apply -f -
             
             kubectl create secret generic mongodb-credentials \
               --namespace=doc-intel-app \
