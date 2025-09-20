@@ -1,5 +1,5 @@
 name: Deploy Complete Platform to GCP
-
+gh se
 on:
   push:
     branches: [main]
@@ -41,6 +41,11 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install GKE Auth Plugin
+        run: |
+          echo "🔧 Installing GKE authentication plugin..."
+          gcloud components install gke-gcloud-auth-plugin --quiet
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -179,12 +184,13 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Install GKE Auth Plugin
+        run: |
+          echo "🔧 Installing GKE authentication plugin..."
+          gcloud components install gke-gcloud-auth-plugin --quiet
+
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
-
-      - name: Install GKE gcloud auth plugin
-        run: |
-          gcloud components install gke-gcloud-auth-plugin
 
       - name: Get GKE credentials
         run: |
