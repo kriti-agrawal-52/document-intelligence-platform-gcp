@@ -33,10 +33,10 @@ output "mysql_private_ip" {
   value       = google_sql_database_instance.mysql_instance.private_ip_address
 }
 
-output "firestore_database_name" {
-  description = "Name of the Firestore database"
-  value       = google_firestore_database.document_db.name
-}
+# output "firestore_database_name" {
+#   description = "Name of the Firestore database"
+#   value       = google_firestore_database.document_db.name
+# }
 
 # --- Redis Cache Information ---
 output "redis_host" {

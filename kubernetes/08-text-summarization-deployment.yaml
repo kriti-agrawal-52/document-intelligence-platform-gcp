@@ -1,8 +1,8 @@
-# /kubernetes/08-text-summarisation-deployment.yaml
+# /kubernetes/08-text-summarization-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: text-summarisation-deployment
+  name: text-summarization-deployment
   namespace: doc-intel-app
 spec:
   replicas: 1  # Reduced for practice app
@@ -10,14 +10,14 @@ spec:
     type: Recreate  # Terminate old pod before creating new one (prevents resource conflicts)
   selector:
     matchLabels:
-      app: text-summarisation-service
+      app: text-summarization-service
   template:
     metadata:
       labels:
-        app: text-summarisation-service
+        app: text-summarization-service
     spec:
       containers:
-      - name: text-summarisation-service
+      - name: text-summarization-service
         image: asia-south1-docker.pkg.dev/doc-intelligence-1758210325/document-intelligence-containers/text-summarization-service:IMAGE_TAG
         ports:
         - containerPort: 8002 # For health check
@@ -69,6 +69,12 @@ spec:
             cpu: "500m"      # Max 0.5 CPU cores
             memory: "512Mi"  # Max 512 MB RAM
         # Health checks for the worker
+        readinessProbe:
+          httpGet:
+            path: /summarize/health
+            port: 8002
+          initialDelaySeconds: 20 # Shorter for summarization service
+          periodSeconds: 10
         livenessProbe:
           httpGet:
             path: /summarize/health
@@ -84,7 +90,7 @@ metadata:
   name: text-summarization-service
   namespace: doc-intel-app
   labels:
-    app: text-summarisation-service
+    app: text-summarization-service
   annotations:
     # Enable NEG for NodePort services used by ingress
     cloud.google.com/neg: '{"ingress": true}'
@@ -93,7 +99,7 @@ metadata:
 spec:
   type: NodePort
   selector:
-    app: text-summarisation-service
+    app: text-summarization-service
   ports:
   - port: 8002
     targetPort: 8002

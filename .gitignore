@@ -42,9 +42,8 @@ build/
 .env.test.local
 .env.production.local
 
-# Scripts (keeping them but not tracking in git for now)
-*.sh
-!scripts/*.sh  # Keep scripts in scripts/ folder
+# Scripts directory (utility scripts not needed in version control)
+scripts/
 
 # Temporary files
 *.tmp

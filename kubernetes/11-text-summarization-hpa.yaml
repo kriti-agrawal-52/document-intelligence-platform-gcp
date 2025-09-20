@@ -4,13 +4,13 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: text-summarisation-service-hpa
+  name: text-summarization-service-hpa
   namespace: doc-intel-app
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: text-summarisation-deployment
+    name: text-summarization-deployment
   minReplicas: 1  # Always keep at least 1 worker running
   maxReplicas: 3  # Scale up to 3 workers for high load
   metrics:

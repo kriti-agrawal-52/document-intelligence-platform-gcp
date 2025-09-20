@@ -103,6 +103,12 @@ spec:
             port: 8001
           initialDelaySeconds: 30 # Increased for PDF processing setup
           periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /extract/health
+            port: 8001
+          initialDelaySeconds: 45 # Longer delay for PDF processing setup
+          periodSeconds: 15
           timeoutSeconds: 10
 
 ---

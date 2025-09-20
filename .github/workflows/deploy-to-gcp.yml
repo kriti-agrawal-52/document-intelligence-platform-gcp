@@ -1,9 +1,15 @@
-name: Deploy to GCP
+name: Deploy Complete Platform to GCP
 
 on:
   push:
     branches: [main]
   workflow_dispatch:  # Allow manual triggering
+    inputs:
+      skip_infrastructure:
+        description: 'Skip infrastructure deployment (if already exists)'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   PROJECT_ID: doc-intelligence-1758210325
@@ -12,8 +18,150 @@ env:
   CLUSTER_NAME: doc-intel-gke
 
 jobs:
+  # Job 1: Infrastructure Setup
+  infrastructure:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.skip_infrastructure != 'true'
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    outputs:
+      cluster_exists: ${{ steps.check_cluster.outputs.exists }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Set Terraform environment variables
+        run: |
+          echo "TF_VAR_gcp_project_id=${{ env.PROJECT_ID }}" >> $GITHUB_ENV
+          echo "TF_VAR_gcp_region=${{ env.REGION }}" >> $GITHUB_ENV
+          echo "TF_VAR_project_name=document-intelligence" >> $GITHUB_ENV
+          echo "TF_VAR_environment=dev" >> $GITHUB_ENV
+          echo "TF_VAR_cluster_name=${{ env.CLUSTER_NAME }}" >> $GITHUB_ENV
+          echo "TF_VAR_openai_api_key=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+          echo "TF_VAR_jwt_secret_key=${{ secrets.JWT_SECRET_KEY }}" >> $GITHUB_ENV
+          echo "TF_VAR_mysql_password=${{ secrets.MYSQL_PASSWORD }}" >> $GITHUB_ENV
+
+      - name: Check if cluster exists
+        id: check_cluster
+        run: |
+          if gcloud container clusters describe ${{ env.CLUSTER_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ GKE cluster already exists, will update if needed"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "🚀 GKE cluster does not exist, will create"
+          fi
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          echo "🔍 Planning infrastructure changes..."
+          terraform plan -out=tfplan
+          echo "📋 Plan complete. Terraform will only modify what's different from current state."
+
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          echo "🚀 Applying infrastructure changes (declarative - only diffs)..."
+          terraform apply tfplan
+          echo "✅ Infrastructure apply complete"
+
+      - name: Verify Infrastructure in VPC
+        run: |
+          echo "🔍 Verifying infrastructure resources exist in VPC..."
+          
+          # Check VPC exists
+          gcloud compute networks describe document-intelligence-vpc --project=${{ env.PROJECT_ID }} || exit 1
+          echo "✅ VPC network exists"
+          
+          # Check GKE cluster is in our VPC  
+          CLUSTER_NETWORK=$(gcloud container clusters describe ${{ env.CLUSTER_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --format="value(network)")
+          if [[ "$CLUSTER_NETWORK" == *"document-intelligence-vpc"* ]]; then
+            echo "✅ GKE cluster is in correct VPC"
+          else
+            echo "❌ GKE cluster VPC mismatch: $CLUSTER_NETWORK"
+            exit 1
+          fi
+          
+          # Check Cloud SQL is accessible
+          gcloud sql instances describe doc-intel-mysql --project=${{ env.PROJECT_ID }} || echo "⚠️ Cloud SQL not found (might be external)"
+          
+          echo "✅ All infrastructure verified in VPC"
+
+      - name: Setup Kubernetes Foundation
+        run: |
+          # Get cluster credentials
+          echo "🔗 Connecting to GKE cluster..."
+          gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }}
+          
+          # Verify cluster connectivity
+          echo "🔍 Verifying cluster connectivity..."
+          kubectl cluster-info
+          kubectl get nodes
+          
+          # Apply Kubernetes foundation in proper order (declarative)
+          echo "🚀 Phase 1: Foundation (declarative - only applies changes)"
+          kubectl apply -f kubernetes/00-namespace.yaml
+          kubectl apply -f kubernetes/01-external-secrets.yaml
+          
+          # Wait for namespace to be ready
+          echo "⏳ Waiting for namespace to be active..."
+          kubectl wait --for=condition=Active --timeout=60s namespace/doc-intel-app
+          
+          echo "🚀 Phase 2: Storage & Dependencies"
+          kubectl apply -f kubernetes/03-mysql-external-service.yaml
+          kubectl apply -f kubernetes/04-mongodb-deployment.yaml
+          kubectl apply -f kubernetes/05-db-init-job.yaml
+          
+          # Check what was actually changed
+          echo "📋 Checking deployment status..."
+          kubectl get all -n doc-intel-app
+          
+          # Wait for databases to be ready with better feedback
+          echo "⏳ Waiting for MongoDB to be ready (up to 5 minutes)..."
+          if kubectl wait --for=condition=available --timeout=300s deployment/mongodb-deployment --namespace=doc-intel-app; then
+            echo "✅ MongoDB is ready"
+          else
+            echo "⚠️ MongoDB not ready yet, continuing (will retry in application phase)"
+            kubectl describe deployment/mongodb-deployment -n doc-intel-app
+          fi
+          
+          # Verify foundation resources
+          echo "🔍 Verifying foundation resources..."
+          kubectl get secrets -n doc-intel-app
+          kubectl get services -n doc-intel-app
+          
+          echo "✅ Infrastructure and foundation setup complete"
+
+  # Job 2: Application Deployment  
   deploy:
     runs-on: ubuntu-latest
+    needs: [infrastructure]  # Wait for infrastructure to complete
+    if: always() && (needs.infrastructure.result == 'success' || github.event.inputs.skip_infrastructure == 'true')
     
     permissions:
       contents: read
@@ -167,18 +315,35 @@ jobs:
               --dry-run=client -o yaml | kubectl apply -f -
           fi
           # Replace IMAGE_TAG placeholder with actual SHA in deployment files
-          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/03-auth-deployment.yaml
-          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/04-text-extraction-deployment.yaml  
+          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/06-auth-deployment.yaml
+          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/07-text-extraction-deployment.yaml  
           sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/08-text-summarization-deployment.yaml
           
-          # Apply Kubernetes resources (HTTP-only for simplicity)
-          kubectl apply -f kubernetes/11-mysql-external-service.yaml
-          kubectl apply -f kubernetes/09-mongodb-deployment.yaml
-          kubectl apply -f kubernetes/16-backend-config.yaml
-          kubectl apply -f kubernetes/03-auth-deployment.yaml
-          kubectl apply -f kubernetes/04-text-extraction-deployment.yaml
+          # Apply Kubernetes resources in proper order to avoid race conditions
+          echo "🚀 Phase 1: Foundation & Secrets"
+          # Namespace and secrets already applied above
+          
+          echo "🚀 Phase 2: Storage & Dependencies"  
+          kubectl apply -f kubernetes/03-mysql-external-service.yaml
+          kubectl apply -f kubernetes/04-mongodb-deployment.yaml
+          kubectl apply -f kubernetes/05-db-init-job.yaml
+          
+          echo "🚀 Phase 3: Application Services"
+          kubectl apply -f kubernetes/06-auth-deployment.yaml
+          kubectl apply -f kubernetes/07-text-extraction-deployment.yaml
           kubectl apply -f kubernetes/08-text-summarization-deployment.yaml
-          kubectl apply -f kubernetes/05-gcp-ingress.yaml
+          
+          echo "🚀 Phase 4: Wait for pods to be ready before ALB"
+          kubectl wait --for=condition=available --timeout=300s deployment/auth-deployment --namespace=doc-intel-app
+          kubectl wait --for=condition=available --timeout=300s deployment/text-extraction-deployment --namespace=doc-intel-app
+          kubectl wait --for=condition=available --timeout=300s deployment/text-summarization-deployment --namespace=doc-intel-app
+          
+          echo "🚀 Phase 5: Scaling & Load Balancing (after pods are ready)"
+          kubectl apply -f kubernetes/09-auth-hpa.yaml
+          kubectl apply -f kubernetes/10-text-extraction-hpa.yaml
+          kubectl apply -f kubernetes/11-text-summarization-hpa.yaml
+          kubectl apply -f kubernetes/12-backend-config.yaml
+          kubectl apply -f kubernetes/13-gcp-ingress.yaml
           
           # Check deployment status before waiting
           echo "Checking deployment status..."
@@ -189,7 +354,7 @@ jobs:
           echo "Waiting for initial deployments (may fail if images not updated yet)..."
           kubectl wait --for=condition=available --timeout=60s deployment/auth-deployment -n doc-intel-app || echo "Auth deployment not ready yet (expected)"
           kubectl wait --for=condition=available --timeout=60s deployment/text-extraction-deployment -n doc-intel-app || echo "Text extraction deployment not ready yet (expected)"
-          kubectl wait --for=condition=available --timeout=60s deployment/text-summarisation-deployment -n doc-intel-app || echo "Text summarization deployment not ready yet (expected)"
+          kubectl wait --for=condition=available --timeout=60s deployment/text-summarization-deployment -n doc-intel-app || echo "Text summarization deployment not ready yet (expected)"
 
       # Update Kubernetes deployments with new images
       # Deployments are now updated declaratively via kubectl apply above
@@ -220,9 +385,9 @@ jobs:
             kubectl logs -l app=text-extraction-service -n doc-intel-app --tail=50 || true
           }
           
-          kubectl wait --for=condition=available --timeout=300s deployment/text-summarisation-deployment -n doc-intel-app || {
+          kubectl wait --for=condition=available --timeout=300s deployment/text-summarization-deployment -n doc-intel-app || {
             echo "Text summarization deployment failed, checking logs..."
-            kubectl logs -l app=text-summarisation-service -n doc-intel-app --tail=50 || true
+            kubectl logs -l app=text-summarization-service -n doc-intel-app --tail=50 || true
           }
 
       # Wait for HTTPS ingress to be fully ready before deploying frontend
@@ -290,7 +455,7 @@ jobs:
             --max-instances=10 \
             --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=http://$INGRESS_IP"
 
-      # Verify deployments with comprehensive ALB/Ingress debugging
+ecre      # Verify deployments with comprehensive ALB/Ingress debugging
       - name: Verify backend deployments and ALB status
         run: |
           echo "🔍 COMPREHENSIVE BACKEND & ALB VERIFICATION"
@@ -300,7 +465,7 @@ jobs:
           echo "📋 1. Checking deployment rollout status..."
           kubectl rollout status deployment/auth-deployment --namespace=doc-intel-app --timeout=300s
           kubectl rollout status deployment/text-extraction-deployment --namespace=doc-intel-app --timeout=300s
-          kubectl rollout status deployment/text-summarisation-deployment --namespace=doc-intel-app --timeout=300s
+          kubectl rollout status deployment/text-summarization-deployment --namespace=doc-intel-app --timeout=300s
           
           # 2. Check pod health and readiness
           echo ""

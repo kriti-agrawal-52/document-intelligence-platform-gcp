@@ -1,4 +1,4 @@
-# text_summarisation_service/main.py
+# text_summarization_service/main.py
 
 import asyncio
 import json

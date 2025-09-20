@@ -137,8 +137,8 @@ steps:
     args:
       - 'set'
       - 'image'
-      - 'deployment/text-summarisation-deployment'
-      - 'text-summarisation-service=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-summarization-service:${SHORT_SHA}'
+      - 'deployment/text-summarization-deployment'
+      - 'text-summarization-service=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/text-summarization-service:${SHORT_SHA}'
       - '--namespace=doc-intel-app'
     env:
       - 'CLOUDSDK_COMPUTE_ZONE=${_REGION}'
