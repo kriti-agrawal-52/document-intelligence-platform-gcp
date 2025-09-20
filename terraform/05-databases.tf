@@ -17,6 +17,14 @@ resource "google_project_service" "sql_admin" {
 
 resource "google_project_service" "redis" {
   service = "redis.googleapis.com"
+  
+  # Prevent deletion of the service
+  disable_on_destroy = false
+  
+  # Wait for API to be fully enabled
+  timeouts {
+    create = "10m"
+  }
 }
 
 # --- Cloud SQL MySQL Instance ---
