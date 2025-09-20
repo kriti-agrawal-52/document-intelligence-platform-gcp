@@ -1,5 +1,5 @@
 name: Deploy Complete Platform to GCP
-gh se
+
 on:
   push:
     branches: [main]
