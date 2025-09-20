@@ -77,14 +77,16 @@ spec:
           httpGet:
             path: /auth/health
             port: 8000
-          initialDelaySeconds: 15
+          initialDelaySeconds: 45  # Increased for MySQL/Redis connections
           periodSeconds: 10
+          timeoutSeconds: 5
         livenessProbe:
           httpGet:
             path: /auth/health
             port: 8000
-          initialDelaySeconds: 15
-          periodSeconds: 10
+          initialDelaySeconds: 60  # Longer for database initialization
+          periodSeconds: 15
+          timeoutSeconds: 5
 
 ---
 # NodePort Service for Auth Service (required for GCP Ingress)

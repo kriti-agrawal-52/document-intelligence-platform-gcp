@@ -48,6 +48,11 @@ scripts/
 # Documentation directory (guides and docs not needed in version control)
 documentation/
 
+# External Secrets configuration (not needed - using GitHub Secrets instead)
+# We use GitHub Secrets for CI/CD deployment which is simpler, faster, and saves ~$1/month
+# External Secrets would be useful for runtime secret rotation, but GitHub Secrets work perfectly for deployment-time injection
+kubernetes/01-external-secrets.yaml
+
 # Temporary files
 *.tmp
 *.temp

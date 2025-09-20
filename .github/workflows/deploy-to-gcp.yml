@@ -132,37 +132,10 @@ jobs:
           echo "🚀 Phase 1: Foundation (declarative - only applies changes)"
           kubectl apply -f kubernetes/00-namespace.yaml
           
-          # Install External Secrets Operator first
-          echo "🔧 Installing External Secrets Operator..."
-          helm repo add external-secrets https://charts.external-secrets.io
-          helm repo update
-          
-          # Check if External Secrets is already installed
-          if helm list -n external-secrets-system | grep -q external-secrets; then
-            echo "✅ External Secrets Operator already installed, upgrading..."
-            helm upgrade external-secrets external-secrets/external-secrets \
-              --namespace external-secrets-system \
-              --wait
-          else
-            echo "🚀 Installing External Secrets Operator..."
-            helm install external-secrets external-secrets/external-secrets \
-              --namespace external-secrets-system \
-              --create-namespace \
-              --wait
-          fi
-          
-          # Wait for External Secrets CRDs to be ready
-          echo "⏳ Waiting for External Secrets CRDs to be available..."
-          kubectl wait --for=condition=Established --timeout=300s crd/secretstores.external-secrets.io
-          kubectl wait --for=condition=Established --timeout=300s crd/externalsecrets.external-secrets.io
-          
-          # Additional wait for API server to register the CRDs
-          echo "⏳ Waiting for API server to register CRDs (60 seconds)..."
-          sleep 60
-          
-          # Verify CRDs are accessible via API
-          echo "🔍 Verifying CRDs are accessible..."
-          kubectl api-resources --api-group=external-secrets.io
+          # Note: External Secrets Operator not needed - using GitHub Secrets for CI/CD
+          # This approach is simpler, faster, and saves ~$1/month vs GCP Secret Manager
+          # GitHub Secrets provide the same security level with better CI/CD integration
+          echo "🔐 Using GitHub Secrets for deployment (skipping External Secrets Operator)"
           
           # Use GitHub Secrets directly (more reliable than External Secrets for CI/CD)
           echo "🔐 Creating secrets directly from GitHub Secrets (bypassing External Secrets)..."
