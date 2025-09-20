@@ -136,10 +136,20 @@ jobs:
           echo "🔧 Installing External Secrets Operator..."
           helm repo add external-secrets https://charts.external-secrets.io
           helm repo update
-          helm install external-secrets external-secrets/external-secrets \
-            --namespace external-secrets-system \
-            --create-namespace \
-            --wait
+          
+          # Check if External Secrets is already installed
+          if helm list -n external-secrets-system | grep -q external-secrets; then
+            echo "✅ External Secrets Operator already installed, upgrading..."
+            helm upgrade external-secrets external-secrets/external-secrets \
+              --namespace external-secrets-system \
+              --wait
+          else
+            echo "🚀 Installing External Secrets Operator..."
+            helm install external-secrets external-secrets/external-secrets \
+              --namespace external-secrets-system \
+              --create-namespace \
+              --wait
+          fi
           
           # Wait for External Secrets CRDs to be ready
           echo "⏳ Waiting for External Secrets CRDs to be available..."
