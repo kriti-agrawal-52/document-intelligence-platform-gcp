@@ -1,27 +1,27 @@
 // API Configuration for Document Intelligence Platform
 // This file contains all API endpoints and configuration
 
-// API base URLs - using Next.js API routes to avoid mixed content issues
+// API base URLs - using generalized Next.js API proxy to avoid mixed content issues
 export const API_CONFIG = {
-  AUTH_SERVICE: '/api/auth', // Use Next.js API routes as proxy
-  EXTRACTION_SERVICE: process.env.NEXT_PUBLIC_EXTRACTION_SERVICE_URL || 'http://localhost:8001',
-  SUMMARIZATION_SERVICE: process.env.NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL || 'http://localhost:8002'
+  AUTH_SERVICE: '/api/proxy', // Use generalized proxy for all services
+  EXTRACTION_SERVICE: '/api/proxy',
+  SUMMARIZATION_SERVICE: '/api/proxy'
 } as const;
 
 // API endpoints mapping
 export const ENDPOINTS = {
-  // Authentication Service (via Next.js API routes)
+  // Authentication Service (via generalized proxy)
   AUTH: {
-    REGISTER: '/register',
-    LOGIN: '/login',
-    LOGOUT: '/logout',
-    PROFILE: '/profile',
-    UPDATE_PROFILE: '/profile',
-    CHANGE_PASSWORD: '/change-password',
-    DELETE_ACCOUNT: '/delete',
-    HEALTH: '/health'
+    REGISTER: '/auth/register',
+    LOGIN: '/auth/token',
+    LOGOUT: '/auth/logout',
+    PROFILE: '/auth/users/me',
+    UPDATE_PROFILE: '/auth/users/me',
+    CHANGE_PASSWORD: '/auth/users/me/change-password',
+    DELETE_ACCOUNT: '/auth/users/me',
+    HEALTH: '/auth/health'
   },
-  // Text Extraction Service
+  // Text Extraction Service (via generalized proxy)
   EXTRACTION: {
     UPLOAD_IMAGE: '/extract/image_text',
     UPLOAD_PDF: '/extract/pdf_text',
@@ -29,9 +29,9 @@ export const ENDPOINTS = {
     GET_DOCUMENT: '/extract/document',
     HEALTH: '/extract/health'
   },
-  // Text Summarization Service (mainly background processing)
+  // Text Summarization Service (via generalized proxy)
   SUMMARIZATION: {
-    HEALTH: '/health'
+    HEALTH: '/summarize/health'
   }
 } as const;
 

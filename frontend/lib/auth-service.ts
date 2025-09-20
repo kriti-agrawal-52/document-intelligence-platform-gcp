@@ -39,13 +39,14 @@ export class AuthService {
    */
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     try {
-      // Send JSON to API route (API route will convert to FormData for backend)
+      // Backend expects form data for login - send FormData to proxy
+      const formData = new FormData();
+      formData.append('username', credentials.username);
+      formData.append('password', credentials.password);
+
       const response = await authApi.post<LoginResponse>(
         ENDPOINTS.AUTH.LOGIN,
-        {
-          username: credentials.username,
-          password: credentials.password
-        },
+        formData,
         { includeAuth: false }
       );
 

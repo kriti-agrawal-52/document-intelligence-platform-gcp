@@ -320,13 +320,19 @@ jobs:
           
           # Check frontend changes (more robust detection)
           echo "🔍 Checking frontend changes..."
+          echo "Files in this commit:"
           git diff --name-only HEAD~1 HEAD | grep "frontend/" || echo "No frontend files in diff"
           
-          if git diff --name-only HEAD~1 HEAD | grep -q "frontend/"; then
+          # Alternative check: look at files in the last few commits
+          echo "Files changed in last 3 commits:"
+          git diff --name-only HEAD~3 HEAD | grep "frontend/" || echo "No frontend files in last 3 commits"
+          
+          # Use broader detection to catch frontend changes
+          if git diff --name-only HEAD~1 HEAD | grep -q "frontend/" || git diff --name-only HEAD~3 HEAD | grep -q "frontend/"; then
             echo "✅ Frontend code changed - will rebuild"
             echo "FRONTEND_CHANGED=true" >> $GITHUB_OUTPUT
           else
-            echo "⏭️ No frontend changes detected"
+            echo "⏭️ No frontend changes detected in recent commits"
             echo "FRONTEND_CHANGED=false" >> $GITHUB_OUTPUT
           fi
 
