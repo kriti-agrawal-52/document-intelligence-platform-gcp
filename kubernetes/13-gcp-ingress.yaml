@@ -7,9 +7,8 @@ metadata:
   name: doc-intel-ingress
   namespace: doc-intel-app
   annotations:
-    kubernetes.io/ingress.global-static-ip-name: "doc-intel-ip"
+    kubernetes.io/ingress.class: "gce-internal"
     kubernetes.io/ingress.allow-http: "true"
-    kubernetes.io/ingress.class: "gce"
 spec:
   rules:
   - http:
@@ -37,11 +36,11 @@ spec:
               number: 8002
 
 ---
-# Static IP for the load balancer
+# Internal load balancer configuration
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: ingress-config
   namespace: doc-intel-app
 data:
-  backend-url: "http://LOAD_BALANCER_IP"  # Will be updated after ingress gets IP
+  backend-url: "http://INTERNAL_LOAD_BALANCER_IP"  # Will be updated after ingress gets internal IP

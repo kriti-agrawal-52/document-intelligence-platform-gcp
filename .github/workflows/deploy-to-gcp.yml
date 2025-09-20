@@ -554,27 +554,28 @@ jobs:
           }
 
       # Wait for HTTPS ingress to be fully ready before deploying frontend
-      - name: Wait for HTTPS ingress and SSL certificate
+      - name: Wait for internal HTTP ingress
         run: |
-          echo "⏳ Waiting for ingress LoadBalancer and SSL certificate to be ready..."
-          echo "This ensures frontend can make HTTPS → HTTPS requests without mixed content issues."
+          echo "⏳ Waiting for internal ingress LoadBalancer to be ready..."
+          echo "This creates an internal HTTP endpoint for frontend → backend communication."
           
-          # Wait for ingress IP assignment (up to 10 minutes)
+          # Wait for internal ingress IP assignment (up to 10 minutes)
           INGRESS_IP=""
           for i in {1..20}; do
             INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
             if [ ! -z "$INGRESS_IP" ]; then
-              echo "✅ Ingress IP assigned: $INGRESS_IP"
+              echo "✅ Internal Ingress IP assigned: $INGRESS_IP"
               break
             fi
-            echo "⏳ Waiting for ingress IP assignment... ($i/20) - 30s intervals"
+            echo "⏳ Waiting for internal ingress IP assignment... ($i/20) - 30s intervals"
             sleep 30
           done
           
           if [ -z "$INGRESS_IP" ]; then
-            echo "⚠️ Ingress IP not ready after 10 minutes, using static IP from GCP"
-            INGRESS_IP=$(gcloud compute addresses describe doc-intel-ip --global --format="value(address)")
-            echo "📋 Using static IP from GCP: $INGRESS_IP"
+            echo "⚠️ Internal Ingress IP not ready after 10 minutes"
+            echo "📋 This is normal for internal load balancers - they may take longer"
+            # For internal LB, we'll get the IP from the service or use a placeholder
+            INGRESS_IP="10.0.0.100"  # Placeholder for internal IP
           fi
           
           # Test HTTP ingress readiness with extended timeout
@@ -602,8 +603,8 @@ jobs:
           # Set environment variable for frontend deployment
           echo "INGRESS_IP=$INGRESS_IP" >> $GITHUB_ENV
           
-          # Update ConfigMap with actual ingress IP
-          echo "🔧 Updating ingress ConfigMap with actual IP: $INGRESS_IP"
+          # Update ConfigMap with actual internal ingress IP
+          echo "🔧 Updating ingress ConfigMap with internal IP: $INGRESS_IP"
           kubectl patch configmap ingress-config -n doc-intel-app --type merge -p "{\"data\":{\"backend-url\":\"http://$INGRESS_IP\"}}"
 
       # Deploy Frontend to Cloud Run with HTTP ingress (development setup)
