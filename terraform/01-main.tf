@@ -15,11 +15,10 @@ terraform {
   required_version = ">= 1.3.2"
 
   # Remote state backend - stores state in GCS bucket for persistence across CI/CD runs
-  # Note: Comment this out for first run, then uncomment and migrate
-  # backend "gcs" {
-  #   bucket = "doc-intelligence-terraform-state-bucket"
-  #   prefix = "terraform/state"
-  # }
+  backend "gcs" {
+    bucket = "doc-intelligence-terraform-state-bucket"
+    prefix = "terraform/state"
+  }
 
   # `required_providers` is a nested block that declares all the cloud providers
   # this project depends on. For each provider, we specify its source and version.
