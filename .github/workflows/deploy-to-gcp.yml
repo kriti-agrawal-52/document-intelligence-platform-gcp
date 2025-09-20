@@ -661,30 +661,32 @@ jobs:
           
           # 5. Test connectivity to individual services
           echo ""
-          echo "🧪 5. SERVICE CONNECTIVITY TESTS:"
-          echo "================================="
+          echo "🧪 5. GCP BACKEND SERVICE HEALTH STATUS:"
+          echo "======================================="
           
-          # Get ingress IP
-          INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || gcloud compute addresses describe doc-intel-ip --global --format="value(address)")
-          echo "🌐 Testing via Ingress IP: $INGRESS_IP"
+          # Get ingress IP for reference
+          INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "No IP assigned")
+          echo "🌐 Internal Load Balancer IP: $INGRESS_IP"
+          echo "💡 Note: Health checks verified via GCP backend service status (not external curl)"
           
-          # Test each service endpoint
-          for service in "auth:8000:/auth/health" "extract:8001:/extract/health" "summarize:8002:/summarize/health"; do
-            name=$(echo $service | cut -d: -f1)
-            path=$(echo $service | cut -d: -f3)
-            echo ""
-            echo "Testing $name service at $path..."
+          # Check GCP backend service health status
+          echo ""
+          echo "📋 GCP Backend Service Health (Internal):"
+          for backend in "k8s1-9dbb77d5-doc-intel-app-auth-service-8000-ca45dc91:auth" "k8s1-9dbb77d5-doc-intel-app-text-extraction-servic-800-0902f726:extract" "k8s1-9dbb77d5-doc-intel-ap-text-summarization-serv-800-e80cf335:summarize"; do
+            backend_name=$(echo $backend | cut -d: -f1)
+            service_name=$(echo $backend | cut -d: -f2)
+            echo "  Checking $service_name service..."
             
-            # Test with detailed curl output
-            response=$(curl -s -w "HTTPSTATUS:%{http_code};TIME:%{time_total}" http://$INGRESS_IP$path 2>/dev/null || echo "HTTPSTATUS:000;TIME:timeout")
-            http_code=$(echo $response | grep -o "HTTPSTATUS:[0-9]*" | cut -d: -f2)
-            time_total=$(echo $response | grep -o "TIME:[0-9.]*" | cut -d: -f2)
-            response_body=$(echo $response | sed 's/HTTPSTATUS:[0-9]*;TIME:[0-9.]*//')
-            
-            if [ "$http_code" = "200" ]; then
-              echo "  ✅ $name: HTTP $http_code (${time_total}s) - $response_body"
+            # Check if backend service exists and get health
+            if gcloud compute backend-services describe $backend_name --region=asia-south1 >/dev/null 2>&1; then
+              health_status=$(gcloud compute backend-services get-health $backend_name --region=asia-south1 --format="value(status.healthStatus[0].healthState)" 2>/dev/null || echo "UNKNOWN")
+              if [ "$health_status" = "HEALTHY" ]; then
+                echo "    ✅ $service_name: HEALTHY"
+              else
+                echo "    ❌ $service_name: $health_status"
+              fi
             else
-              echo "  ❌ $name: HTTP $http_code (${time_total}s)"
+              echo "    ⏳ $service_name: Backend service not found (still creating)"
             fi
           done
           
