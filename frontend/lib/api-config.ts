@@ -1,25 +1,25 @@
 // API Configuration for Document Intelligence Platform
 // This file contains all API endpoints and configuration
 
-// Environment-based API base URLs
+// API base URLs - using Next.js API routes to avoid mixed content issues
 export const API_CONFIG = {
-  AUTH_SERVICE: process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8000',
+  AUTH_SERVICE: '/api/auth', // Use Next.js API routes as proxy
   EXTRACTION_SERVICE: process.env.NEXT_PUBLIC_EXTRACTION_SERVICE_URL || 'http://localhost:8001',
   SUMMARIZATION_SERVICE: process.env.NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL || 'http://localhost:8002'
 } as const;
 
 // API endpoints mapping
 export const ENDPOINTS = {
-  // Authentication Service
+  // Authentication Service (via Next.js API routes)
   AUTH: {
-    REGISTER: '/auth/register',
-    LOGIN: '/auth/token',
-    LOGOUT: '/auth/logout',
-    PROFILE: '/auth/users/me',
-    UPDATE_PROFILE: '/auth/users/me',
-    CHANGE_PASSWORD: '/auth/users/me/change-password',
-    DELETE_ACCOUNT: '/auth/users/me',
-    HEALTH: '/auth/health'
+    REGISTER: '/register',
+    LOGIN: '/login',
+    LOGOUT: '/logout',
+    PROFILE: '/profile',
+    UPDATE_PROFILE: '/profile',
+    CHANGE_PASSWORD: '/change-password',
+    DELETE_ACCOUNT: '/delete',
+    HEALTH: '/health'
   },
   // Text Extraction Service
   EXTRACTION: {
