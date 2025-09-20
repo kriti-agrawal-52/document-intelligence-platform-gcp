@@ -10,7 +10,7 @@ metadata:
     app: mysql-external
 subsets:
 - addresses:
-  - ip: MYSQL_PRIVATE_IP  # Will be replaced by CD pipeline with actual Terraform output
+  - ip: ${MYSQL_PRIVATE_IP}
   ports:
   - port: 3306
     name: mysql
