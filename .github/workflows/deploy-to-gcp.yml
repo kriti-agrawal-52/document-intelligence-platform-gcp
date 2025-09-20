@@ -283,43 +283,19 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
 
-      - name: Check for code changes (Smart Rebuild Logic)
+      # Temporarily disabled smart rebuild logic for this deployment to create v1 tags
+      - name: Force rebuild all images (temporary - creating v1 tags)
         id: check_changes
         run: |
-          echo "🔍 Checking what changed since last deployment..."
+          echo "🔨 Force building all images to create v1 tags..."
+          echo "AUTH_CHANGED=true" >> $GITHUB_OUTPUT
+          echo "EXTRACTION_CHANGED=true" >> $GITHUB_OUTPUT  
+          echo "SUMMARIZATION_CHANGED=true" >> $GITHUB_OUTPUT
+          echo "FRONTEND_CHANGED=true" >> $GITHUB_OUTPUT
           
-          # Check if microservice code changed
-          if git diff --name-only HEAD~1 HEAD | grep -E "(user_auth|text_extraction|text_summarization)/" | grep -v "test"; then
-            echo "🔄 Microservice code changed - rebuilding containers"
-            echo "AUTH_CHANGED=true" >> $GITHUB_OUTPUT
-            echo "EXTRACTION_CHANGED=true" >> $GITHUB_OUTPUT  
-            echo "SUMMARIZATION_CHANGED=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ No microservice code changes - using existing containers"
-            echo "AUTH_CHANGED=false" >> $GITHUB_OUTPUT
-            echo "EXTRACTION_CHANGED=false" >> $GITHUB_OUTPUT
-            echo "SUMMARIZATION_CHANGED=false" >> $GITHUB_OUTPUT
-          fi
-          
-          # Check specific service changes for granular rebuilds
-          if git diff --name-only HEAD~1 HEAD | grep -q "user_auth/"; then
-            echo "AUTH_CHANGED=true" >> $GITHUB_OUTPUT
-          fi
-          
-          if git diff --name-only HEAD~1 HEAD | grep -q "text_extraction/"; then
-            echo "EXTRACTION_CHANGED=true" >> $GITHUB_OUTPUT
-          fi
-          
-          if git diff --name-only HEAD~1 HEAD | grep -q "text_summarization/"; then
-            echo "SUMMARIZATION_CHANGED=true" >> $GITHUB_OUTPUT
-          fi
-          
-          # Check frontend changes
-          if git diff --name-only HEAD~1 HEAD | grep -q "frontend/"; then
-            echo "FRONTEND_CHANGED=true" >> $GITHUB_OUTPUT
-          else
-            echo "FRONTEND_CHANGED=false" >> $GITHUB_OUTPUT
-          fi
+          # TODO: Re-enable smart rebuild logic after this deployment:
+          # - Uncomment the original check_changes logic
+          # - Comment out this force rebuild section
 
       - name: Get GKE credentials
         run: |
@@ -379,6 +355,22 @@ jobs:
       - name: Skip Frontend build
         if: steps.check_changes.outputs.FRONTEND_CHANGED == 'false'
         run: echo "⏭️ Skipping Frontend build (no code changes)"
+
+      - name: Clean up old SHA-tagged images (cost optimization)
+        run: |
+          echo "🧹 Cleaning up old SHA-tagged images from Artifact Registry..."
+          
+          # Keep only the last 5 SHA-tagged images for each service (cost optimization)
+          for service in auth-service text-extraction-service text-summarization-service frontend; do
+            echo "Cleaning up old $service images..."
+            gcloud artifacts docker images list asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/$service \
+              --include-tags --sort-by=~CREATE_TIME --format="value(version)" | \
+              grep -E "^[a-f0-9]{40}$" | tail -n +6 | \
+              xargs -I {} gcloud artifacts docker images delete \
+                asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/$service:{} --quiet || true
+          done
+          
+          echo "✅ Old images cleaned up - keeping v1 tags and recent 5 SHA tags"
 
       # Deploy Kubernetes manifests
       - name: Install External Secrets Operator
