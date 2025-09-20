@@ -66,6 +66,11 @@ output "private_subnet_name" {
   value       = google_compute_subnetwork.private_subnet.name
 }
 
+output "ingress_static_ip" {
+  description = "The static IP address for the ingress load balancer"
+  value       = google_compute_global_address.ingress_ip.address
+}
+
 # --- Pub/Sub Information ---
 output "pubsub_topic_name" {
   description = "Name of the Pub/Sub topic for summarization jobs"

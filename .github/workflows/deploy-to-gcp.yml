@@ -572,8 +572,9 @@ jobs:
           done
           
           if [ -z "$INGRESS_IP" ]; then
-            echo "⚠️ Ingress IP not ready after 10 minutes, using static IP"
-            INGRESS_IP="34.102.207.209"
+            echo "⚠️ Ingress IP not ready after 10 minutes, using static IP from Terraform"
+            INGRESS_IP=$(cd terraform && terraform output -raw ingress_static_ip)
+            echo "📋 Using static IP from Terraform: $INGRESS_IP"
           fi
           
           # Test HTTP ingress readiness with extended timeout
@@ -600,6 +601,10 @@ jobs:
           
           # Set environment variable for frontend deployment
           echo "INGRESS_IP=$INGRESS_IP" >> $GITHUB_ENV
+          
+          # Update ConfigMap with actual ingress IP
+          echo "🔧 Updating ingress ConfigMap with actual IP: $INGRESS_IP"
+          kubectl patch configmap ingress-config -n doc-intel-app --type merge -p "{\"data\":{\"backend-url\":\"http://$INGRESS_IP\"}}"
 
       # Deploy Frontend to Cloud Run with HTTP ingress (development setup)
       - name: Deploy Frontend to Cloud Run
@@ -658,16 +663,16 @@ jobs:
           echo ""
           echo "❤️  Backend Health Status:"
           kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.metadata.annotations.ingress\.kubernetes\.io/backends}' | python3 -c "
-          import sys, json
-          try:
-              data = json.loads(sys.stdin.read())
-              print('Backend Health Status:')
-              for backend, status in data.items():
-                  service_name = backend.split('-')[-3:-1]  # Extract service name
-                  print(f'  - {\"_\".join(service_name)}: {status}')
-          except:
-              print('  Could not parse backend status')
-          " || echo "  Backend status not available yet"
+import sys, json
+try:
+    data = json.loads(sys.stdin.read())
+    print('Backend Health Status:')
+    for backend, status in data.items():
+        service_name = backend.split('-')[-3:-1]  # Extract service name
+        print(f'  - {\"_\".join(service_name)}: {status}')
+except:
+    print('  Could not parse backend status')
+" || echo "  Backend status not available yet"
           
           # Check ingress events
           echo ""
@@ -680,7 +685,7 @@ jobs:
           echo "================================="
           
           # Get ingress IP
-          INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "34.102.207.209")
+          INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || (cd terraform && terraform output -raw ingress_static_ip))
           echo "🌐 Testing via Ingress IP: $INGRESS_IP"
           
           # Test each service endpoint
@@ -713,16 +718,16 @@ jobs:
           for service in auth-service text-extraction-service text-summarization-service; do
             echo "  Checking $service annotations..."
             kubectl get service $service -n doc-intel-app -o jsonpath='{.metadata.annotations}' | python3 -c "
-            import sys, json
-            try:
-                data = json.loads(sys.stdin.read())
-                neg = data.get('cloud.google.com/neg', 'MISSING')
-                backend_config = data.get('cloud.google.com/backend-config', 'MISSING')
-                print(f'    NEG: {neg}')
-                print(f'    BackendConfig: {backend_config}')
-            except:
-                print('    Could not parse annotations')
-            " || echo "    Service not found or no annotations"
+import sys, json
+try:
+    data = json.loads(sys.stdin.read())
+    neg = data.get('cloud.google.com/neg', 'MISSING')
+    backend_config = data.get('cloud.google.com/backend-config', 'MISSING')
+    print(f'    NEG: {neg}')
+    print(f'    BackendConfig: {backend_config}')
+except:
+    print('    Could not parse annotations')
+" || echo "    Service not found or no annotations"
           done
           
           # 7. Final status summary
