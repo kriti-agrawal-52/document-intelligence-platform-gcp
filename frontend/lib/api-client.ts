@@ -86,7 +86,7 @@ class ApiClient {
 
   // Handle API response and errors
   private async handleResponse<T>(response: Response): Promise<T> {
-    // For local API routes (proxy), response is already processed
+    // For local API routes (proxy), response is already properly formatted
     if (this.baseURL.startsWith('/api/')) {
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
@@ -108,11 +108,12 @@ class ApiClient {
         throw new ApiClientError(errorMessage, response.status);
       }
 
-      // For successful responses from API routes, just parse JSON
+      // For successful responses from API routes, parse JSON once
       try {
         return await response.json();
-      } catch {
-        return {} as T;
+      } catch (jsonError) {
+        console.error('[API Client] JSON parsing error for proxy response:', jsonError);
+        throw new ApiClientError('Invalid response format from API', response.status);
       }
     }
 

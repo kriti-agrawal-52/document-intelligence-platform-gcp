@@ -70,9 +70,11 @@ async function handleRequest(request: NextRequest, method: 'GET' | 'POST' | 'PUT
       headers
     });
 
-    return NextResponse.json(result.data, { 
+    // Return the backend response directly without double-wrapping
+    return new Response(JSON.stringify(result.data), {
       status: result.status,
       headers: {
+        'Content-Type': 'application/json',
         'X-Proxied-From': service,
         'X-Backend-Status': result.statusText
       }
