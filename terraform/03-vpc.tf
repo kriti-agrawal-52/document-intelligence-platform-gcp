@@ -61,6 +61,17 @@ resource "google_compute_subnetwork" "public_subnet" {
   network       = google_compute_network.vpc.name
 }
 
+# --- Proxy-Only Subnet ---
+# Required for internal load balancers (gce-internal ingress)
+resource "google_compute_subnetwork" "proxy_only_subnet" {
+  name          = "${var.project_name}-proxy-only-subnet"
+  ip_cidr_range = "10.0.3.0/24"
+  region        = var.gcp_region
+  network       = google_compute_network.vpc.name
+  purpose       = "INTERNAL_HTTPS_LOAD_BALANCER"
+  role          = "ACTIVE"
+}
+
 # --- Cloud Router ---
 # Router for NAT gateway to allow private instances to access the internet
 resource "google_compute_router" "router" {
