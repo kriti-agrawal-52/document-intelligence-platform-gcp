@@ -86,6 +86,37 @@ class ApiClient {
 
   // Handle API response and errors
   private async handleResponse<T>(response: Response): Promise<T> {
+    // For local API routes (proxy), response is already processed
+    if (this.baseURL.startsWith('/api/')) {
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.detail || errorData.message || errorMessage;
+        } catch {
+          // If response is not JSON, use default error message
+        }
+
+        // Handle specific status codes
+        if (response.status === 401) {
+          TokenManager.removeToken();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
+        }
+
+        throw new ApiClientError(errorMessage, response.status);
+      }
+
+      // For successful responses from API routes, just parse JSON
+      try {
+        return await response.json();
+      } catch {
+        return {} as T;
+      }
+    }
+
+    // For direct backend calls (fallback/legacy), use full error handling
     if (!response.ok) {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       let errorDetail: string | undefined;
@@ -98,9 +129,7 @@ class ApiClient {
         // If response is not JSON, use default error message
       }
 
-      // Handle specific status codes
       if (response.status === 401) {
-        // Unauthorized - clear token and redirect to login
         TokenManager.removeToken();
         if (typeof window !== 'undefined') {
           window.location.href = '/login';
@@ -110,7 +139,7 @@ class ApiClient {
       throw new ApiClientError(errorMessage, response.status, errorDetail);
     }
 
-    // Handle empty responses (e.g., 204 No Content)
+    // Handle empty responses
     if (response.status === 204 || response.headers.get('content-length') === '0') {
       return {} as T;
     }
@@ -118,7 +147,6 @@ class ApiClient {
     try {
       return await response.json();
     } catch {
-      // If response is not JSON, return empty object
       return {} as T;
     }
   }
