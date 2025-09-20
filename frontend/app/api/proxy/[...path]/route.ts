@@ -23,14 +23,16 @@ const getServiceFromPath = (path: string[]): 'AUTH' | 'EXTRACTION' | 'SUMMARIZAT
 };
 
 // Generic handler for all HTTP methods
-async function handleRequest(request: NextRequest, method: 'GET' | 'POST' | 'PUT' | 'DELETE') {
+async function handleRequest(
+  request: NextRequest, 
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  params: { path: string[] }
+) {
   try {
-    // Extract path segments
-    const url = new URL(request.url);
-    const pathSegments = url.pathname.split('/').filter(Boolean);
+    // Get path segments from params (Next.js App Router style)
+    const servicePath = params.path || [];
     
-    // Remove 'api/proxy' from path to get actual service path
-    const servicePath = pathSegments.slice(2); // Remove 'api' and 'proxy'
+    console.log('[Proxy Route] Service path:', servicePath);
     
     if (!servicePath.length) {
       return NextResponse.json({ error: 'Invalid API path' }, { status: 400 });
@@ -90,18 +92,30 @@ async function handleRequest(request: NextRequest, method: 'GET' | 'POST' | 'PUT
 }
 
 // Export HTTP method handlers
-export async function GET(request: NextRequest) {
-  return handleRequest(request, 'GET');
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { path: string[] } }
+) {
+  return handleRequest(request, 'GET', params);
 }
 
-export async function POST(request: NextRequest) {
-  return handleRequest(request, 'POST');
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { path: string[] } }
+) {
+  return handleRequest(request, 'POST', params);
 }
 
-export async function PUT(request: NextRequest) {
-  return handleRequest(request, 'PUT');
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { path: string[] } }
+) {
+  return handleRequest(request, 'PUT', params);
 }
 
-export async function DELETE(request: NextRequest) {
-  return handleRequest(request, 'DELETE');
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { path: string[] } }
+) {
+  return handleRequest(request, 'DELETE', params);
 }
