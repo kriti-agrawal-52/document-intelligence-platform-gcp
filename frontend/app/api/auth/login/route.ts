@@ -21,8 +21,19 @@ export async function POST(request: NextRequest) {
       body: formData,
     });
 
-    // Get response data
-    const data = await response.json();
+    // Handle response data safely
+    let data;
+    try {
+      data = await response.json();
+    } catch (jsonError) {
+      console.error('JSON parsing error:', jsonError);
+      const text = await response.text();
+      console.error('Response text:', text);
+      return NextResponse.json(
+        { error: 'Invalid response from auth service' }, 
+        { status: 502 }
+      );
+    }
 
     // Return response with same status
     return NextResponse.json(data, { status: response.status });

@@ -1,22 +1,17 @@
-// Next.js API Route - Server-side proxy for auth registration
-// This solves the mixed content issue by moving HTTP calls to server-side
+// Next.js API Route - Server-side proxy for auth health check
 
 import { NextRequest, NextResponse } from 'next/server';
 
 const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8000';
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    // Get request body
-    const body = await request.json();
-    
     // Make server-side request to auth service
-    const response = await fetch(`${AUTH_SERVICE_URL}/auth/register`, {
-      method: 'POST',
+    const response = await fetch(`${AUTH_SERVICE_URL}/auth/health`, {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
     });
 
     // Handle response data safely
@@ -24,22 +19,21 @@ export async function POST(request: NextRequest) {
     try {
       data = await response.json();
     } catch (jsonError) {
-      console.error('Registration JSON parsing error:', jsonError);
+      console.error('Health check JSON parsing error:', jsonError);
       const text = await response.text();
-      console.error('Registration response text:', text);
+      console.error('Health check response text:', text);
       return NextResponse.json(
         { error: 'Invalid response from auth service' }, 
         { status: 502 }
       );
     }
 
-    // Return response with same status
     return NextResponse.json(data, { status: response.status });
     
   } catch (error) {
-    console.error('Registration proxy error:', error);
+    console.error('Health check proxy error:', error);
     return NextResponse.json(
-      { error: 'Registration failed' }, 
+      { error: 'Health check failed' }, 
       { status: 500 }
     );
   }
