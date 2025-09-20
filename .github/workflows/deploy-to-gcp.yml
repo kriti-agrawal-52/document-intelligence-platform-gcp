@@ -284,40 +284,102 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
 
+      - name: Check for code changes (Smart Rebuild Logic)
+        id: check_changes
+        run: |
+          echo "🔍 Checking what changed since last deployment..."
+          
+          # Check if microservice code changed
+          if git diff --name-only HEAD~1 HEAD | grep -E "(user_auth|text_extraction|text_summarization)/" | grep -v "test"; then
+            echo "🔄 Microservice code changed - rebuilding containers"
+            echo "AUTH_CHANGED=true" >> $GITHUB_OUTPUT
+            echo "EXTRACTION_CHANGED=true" >> $GITHUB_OUTPUT  
+            echo "SUMMARIZATION_CHANGED=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No microservice code changes - using existing containers"
+            echo "AUTH_CHANGED=false" >> $GITHUB_OUTPUT
+            echo "EXTRACTION_CHANGED=false" >> $GITHUB_OUTPUT
+            echo "SUMMARIZATION_CHANGED=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check specific service changes for granular rebuilds
+          if git diff --name-only HEAD~1 HEAD | grep -q "user_auth/"; then
+            echo "AUTH_CHANGED=true" >> $GITHUB_OUTPUT
+          fi
+          
+          if git diff --name-only HEAD~1 HEAD | grep -q "text_extraction/"; then
+            echo "EXTRACTION_CHANGED=true" >> $GITHUB_OUTPUT
+          fi
+          
+          if git diff --name-only HEAD~1 HEAD | grep -q "text_summarization/"; then
+            echo "SUMMARIZATION_CHANGED=true" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check frontend changes
+          if git diff --name-only HEAD~1 HEAD | grep -q "frontend/"; then
+            echo "FRONTEND_CHANGED=true" >> $GITHUB_OUTPUT
+          else
+            echo "FRONTEND_CHANGED=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Get GKE credentials
         run: |
           gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }}
 
-      # Build and push backend services
+      # Smart rebuild: Only build services that changed
       - name: Build and push Auth Service
+        if: steps.check_changes.outputs.AUTH_CHANGED == 'true'
         run: |
+          echo "🔨 Building Auth Service (code changed)"
           docker build -f user_auth/Dockerfile \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:${{ github.sha }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:latest .
           docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service
 
+      - name: Skip Auth Service build
+        if: steps.check_changes.outputs.AUTH_CHANGED == 'false'
+        run: echo "⏭️ Skipping Auth Service build (no code changes)"
+
       - name: Build and push Text Extraction Service
+        if: steps.check_changes.outputs.EXTRACTION_CHANGED == 'true'
         run: |
+          echo "🔨 Building Text Extraction Service (code changed)"
           docker build -f text_extraction/Dockerfile \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:${{ github.sha }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:latest .
           docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service
 
+      - name: Skip Text Extraction build
+        if: steps.check_changes.outputs.EXTRACTION_CHANGED == 'false'
+        run: echo "⏭️ Skipping Text Extraction build (no code changes)"
+
       - name: Build and push Text Summarization Service
+        if: steps.check_changes.outputs.SUMMARIZATION_CHANGED == 'true'
         run: |
+          echo "🔨 Building Text Summarization Service (code changed)"
           docker build -f text_summarization/Dockerfile \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:${{ github.sha }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:latest .
           docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service
 
+      - name: Skip Text Summarization build
+        if: steps.check_changes.outputs.SUMMARIZATION_CHANGED == 'false'
+        run: echo "⏭️ Skipping Text Summarization build (no code changes)"
+
       - name: Build and push Frontend
+        if: steps.check_changes.outputs.FRONTEND_CHANGED == 'true'
         run: |
+          echo "🔨 Building Frontend (code changed)"
           docker build -f frontend/Dockerfile \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest ./frontend
           docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend
+
+      - name: Skip Frontend build
+        if: steps.check_changes.outputs.FRONTEND_CHANGED == 'false'
+        run: echo "⏭️ Skipping Frontend build (no code changes)"
 
       # Deploy Kubernetes manifests
       - name: Install External Secrets Operator
