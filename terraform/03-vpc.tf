@@ -73,10 +73,10 @@ resource "google_compute_subnetwork" "proxy_only_subnet" {
 }
 
 # --- VPC Connector Subnet ---
-# Required for Cloud Run to access internal VPC resources
+# Required for Cloud Run to access VPC resources
 resource "google_compute_subnetwork" "vpc_connector_subnet" {
   name          = "${var.project_name}-vpc-connector-subnet"
-  ip_cidr_range = "10.0.4.0/28"  # Small subnet for connector
+  ip_cidr_range = "10.0.4.0/28"  # Small range for VPC connector
   region        = var.gcp_region
   network       = google_compute_network.vpc.name
 }

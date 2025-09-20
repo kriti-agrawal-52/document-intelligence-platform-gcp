@@ -612,6 +612,10 @@ jobs:
         run: |
           echo "🚀 Deploying frontend with HTTP backend URLs: http://$INGRESS_IP"
           echo "Note: Using HTTP for development - no SSL complexity"
+          # Get VPC connector name from GCP
+          VPC_CONNECTOR=$(gcloud compute networks vpc-access connectors list --region=${{ env.REGION }} --format="value(name)" --filter="name:document-intelligence-vpc-connector")
+          echo "🔗 Using VPC Connector: $VPC_CONNECTOR"
+          
           gcloud run deploy frontend \
             --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:v1 \
             --platform=managed \
@@ -622,6 +626,8 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=10 \
+            --vpc-connector=$VPC_CONNECTOR \
+            --vpc-egress=private-ranges-only \
             --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=http://$INGRESS_IP"
 
       # Verify deployments with comprehensive ALB/Ingress debugging
