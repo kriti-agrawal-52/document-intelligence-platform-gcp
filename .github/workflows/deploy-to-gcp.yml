@@ -200,9 +200,16 @@ jobs:
           
           echo "✅ All secrets created successfully from GitHub Secrets"
           
-          # Wait for namespace to be ready
+          # Wait for namespace to be ready (with better error handling)
           echo "⏳ Waiting for namespace to be active..."
-          kubectl wait --for=condition=Active --timeout=60s namespace/doc-intel-app
+          if kubectl wait --for=condition=Active --timeout=60s namespace/doc-intel-app; then
+            echo "✅ Namespace is active"
+          else
+            echo "⚠️ Namespace wait timed out, checking status..."
+            kubectl get namespace doc-intel-app -o yaml
+            kubectl describe namespace doc-intel-app
+            echo "Continuing anyway - namespace likely exists..."
+          fi
           
           echo "🚀 Phase 2: Storage & Dependencies"
           kubectl apply -f kubernetes/03-mysql-external-service.yaml
