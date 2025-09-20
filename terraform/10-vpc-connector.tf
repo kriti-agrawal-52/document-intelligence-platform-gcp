@@ -10,12 +10,11 @@ resource "google_project_service" "vpcaccess" {
 resource "google_vpc_access_connector" "connector" {
   name          = "doc-intel-vpc-connector"
   region        = var.gcp_region
-  ip_cidr_range = "10.0.4.0/28"
+  ip_cidr_range = "10.0.5.0/28"
   network       = google_compute_network.vpc.name
   
   depends_on = [
-    google_project_service.vpcaccess,
-    google_compute_subnetwork.vpc_connector_subnet
+    google_project_service.vpcaccess
   ]
 }
 
