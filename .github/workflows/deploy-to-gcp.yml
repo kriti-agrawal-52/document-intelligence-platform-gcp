@@ -131,6 +131,21 @@ jobs:
           # Apply Kubernetes foundation in proper order (declarative)
           echo "🚀 Phase 1: Foundation (declarative - only applies changes)"
           kubectl apply -f kubernetes/00-namespace.yaml
+          
+          # Install External Secrets Operator first
+          echo "🔧 Installing External Secrets Operator..."
+          helm repo add external-secrets https://charts.external-secrets.io
+          helm repo update
+          helm install external-secrets external-secrets/external-secrets \
+            --namespace external-secrets-system \
+            --create-namespace \
+            --wait
+          
+          # Wait for External Secrets CRDs to be ready
+          echo "⏳ Waiting for External Secrets CRDs to be available..."
+          kubectl wait --for=condition=Established --timeout=300s crd/secretstores.external-secrets.io
+          kubectl wait --for=condition=Established --timeout=300s crd/externalsecrets.external-secrets.io
+          
           kubectl apply -f kubernetes/01-external-secrets.yaml
           
           # Wait for namespace to be ready
