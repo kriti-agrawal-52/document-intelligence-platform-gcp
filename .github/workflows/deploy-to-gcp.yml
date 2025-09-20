@@ -334,7 +334,7 @@ jobs:
           echo "🔨 Building Auth Service (code changed)"
           docker build -f user_auth/Dockerfile \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:latest .
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:v1 .
           docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service
 
       - name: Skip Auth Service build
@@ -347,7 +347,7 @@ jobs:
           echo "🔨 Building Text Extraction Service (code changed)"
           docker build -f text_extraction/Dockerfile \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:latest .
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:v1 .
           docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service
 
       - name: Skip Text Extraction build
@@ -360,7 +360,7 @@ jobs:
           echo "🔨 Building Text Summarization Service (code changed)"
           docker build -f text_summarization/Dockerfile \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:latest .
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:v1 .
           docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service
 
       - name: Skip Text Summarization build
@@ -373,7 +373,7 @@ jobs:
           echo "🔨 Building Frontend (code changed)"
           docker build -f frontend/Dockerfile \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest ./frontend
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:v1 ./frontend
           docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend
 
       - name: Skip Frontend build
@@ -463,10 +463,8 @@ jobs:
               --from-literal=MONGO_COLLECTION_NAME="extracted_texts" \
               --dry-run=client -o yaml | kubectl apply -f -
           fi
-          # Replace IMAGE_TAG placeholder with actual SHA in deployment files
-          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/06-auth-deployment.yaml
-          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/07-text-extraction-deployment.yaml  
-          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" kubernetes/08-text-summarization-deployment.yaml
+          # Note: Using 'latest' tags for stable image references (no IMAGE_TAG replacement needed)
+          echo "📦 Using 'latest' image tags for consistent deployments"
           
           # Apply Kubernetes resources in proper order to avoid race conditions
           echo "🚀 Phase 1: Foundation & Secrets"
