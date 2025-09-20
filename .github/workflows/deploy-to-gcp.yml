@@ -146,7 +146,25 @@ jobs:
           kubectl wait --for=condition=Established --timeout=300s crd/secretstores.external-secrets.io
           kubectl wait --for=condition=Established --timeout=300s crd/externalsecrets.external-secrets.io
           
-          kubectl apply -f kubernetes/01-external-secrets.yaml
+          # Additional wait for API server to register the CRDs
+          echo "⏳ Waiting for API server to register CRDs (60 seconds)..."
+          sleep 60
+          
+          # Verify CRDs are accessible via API
+          echo "🔍 Verifying CRDs are accessible..."
+          kubectl api-resources --api-group=external-secrets.io
+          
+          # Retry mechanism for applying external secrets
+          echo "🔄 Applying External Secrets with retry..."
+          for i in {1..3}; do
+            if kubectl apply -f kubernetes/01-external-secrets.yaml; then
+              echo "✅ External Secrets applied successfully"
+              break
+            else
+              echo "⚠️ External Secrets apply failed, retrying in 30 seconds... (attempt $i/3)"
+              sleep 30
+            fi
+          done
           
           # Wait for namespace to be ready
           echo "⏳ Waiting for namespace to be active..."
