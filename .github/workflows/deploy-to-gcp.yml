@@ -455,7 +455,7 @@ jobs:
             --max-instances=10 \
             --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=http://$INGRESS_IP"
 
-ecre      # Verify deployments with comprehensive ALB/Ingress debugging
+      # Verify deployments with comprehensive ALB/Ingress debugging
       - name: Verify backend deployments and ALB status
         run: |
           echo "🔍 COMPREHENSIVE BACKEND & ALB VERIFICATION"
