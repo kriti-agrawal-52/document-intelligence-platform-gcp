@@ -612,7 +612,7 @@ jobs:
           echo "🚀 Deploying frontend with HTTP backend URLs: http://$INGRESS_IP"
           echo "Note: Using HTTP for development - no SSL complexity"
           gcloud run deploy frontend \
-            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:v1 \
             --platform=managed \
             --region=${{ env.REGION }} \
             --allow-unauthenticated \
