@@ -45,6 +45,9 @@ build/
 # Scripts directory (utility scripts not needed in version control)
 scripts/
 
+# Documentation directory (guides and docs not needed in version control)
+documentation/
+
 # Temporary files
 *.tmp
 *.temp
