@@ -613,7 +613,7 @@ jobs:
           echo "🚀 Deploying frontend with HTTP backend URLs: http://$INGRESS_IP"
           echo "Note: Using HTTP for development - no SSL complexity"
           # Get VPC connector name from GCP
-          VPC_CONNECTOR=$(gcloud compute networks vpc-access connectors list --region=${{ env.REGION }} --format="value(name)" --filter="name:document-intelligence-vpc-connector")
+          VPC_CONNECTOR=$(gcloud compute networks vpc-access connectors list --region=${{ env.REGION }} --format="value(name)" --filter="name:doc-intel-vpc-connector")
           echo "🔗 Using VPC Connector: $VPC_CONNECTOR"
           
           gcloud run deploy frontend \

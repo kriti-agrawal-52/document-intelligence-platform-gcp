@@ -8,7 +8,7 @@ resource "google_project_service" "vpcaccess" {
 
 # Create VPC Connector for Cloud Run
 resource "google_vpc_access_connector" "connector" {
-  name          = "${var.project_name}-vpc-connector"
+  name          = "doc-intel-vpc-connector"
   region        = var.gcp_region
   ip_cidr_range = "10.0.4.0/28"
   network       = google_compute_network.vpc.name
