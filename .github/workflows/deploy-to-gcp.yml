@@ -572,9 +572,9 @@ jobs:
           done
           
           if [ -z "$INGRESS_IP" ]; then
-            echo "⚠️ Ingress IP not ready after 10 minutes, using static IP from Terraform"
-            INGRESS_IP=$(cd terraform && terraform output -raw ingress_static_ip)
-            echo "📋 Using static IP from Terraform: $INGRESS_IP"
+            echo "⚠️ Ingress IP not ready after 10 minutes, using static IP from GCP"
+            INGRESS_IP=$(gcloud compute addresses describe doc-intel-ip --global --format="value(address)")
+            echo "📋 Using static IP from GCP: $INGRESS_IP"
           fi
           
           # Test HTTP ingress readiness with extended timeout
@@ -675,7 +675,7 @@ jobs:
           echo "================================="
           
           # Get ingress IP
-          INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || (cd terraform && terraform output -raw ingress_static_ip))
+          INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || gcloud compute addresses describe doc-intel-ip --global --format="value(address)")
           echo "🌐 Testing via Ingress IP: $INGRESS_IP"
           
           # Test each service endpoint
