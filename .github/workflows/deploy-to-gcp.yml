@@ -662,17 +662,7 @@ jobs:
           # Backend health status
           echo ""
           echo "❤️  Backend Health Status:"
-          kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.metadata.annotations.ingress\.kubernetes\.io/backends}' | python3 -c "
-import sys, json
-try:
-    data = json.loads(sys.stdin.read())
-    print('Backend Health Status:')
-    for backend, status in data.items():
-        service_name = backend.split('-')[-3:-1]  # Extract service name
-        print(f'  - {\"_\".join(service_name)}: {status}')
-except:
-    print('  Could not parse backend status')
-" || echo "  Backend status not available yet"
+          kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.metadata.annotations.ingress\.kubernetes\.io/backends}' | python3 -c 'import sys, json; input_data = sys.stdin.read().strip(); data = json.loads(input_data) if input_data else {}; [print(f"  - {backend}: {status}") for backend, status in data.items()]' || echo "  Backend status not available yet"
           
           # Check ingress events
           echo ""
@@ -717,17 +707,7 @@ except:
           echo "📋 Service Annotations Check:"
           for service in auth-service text-extraction-service text-summarization-service; do
             echo "  Checking $service annotations..."
-            kubectl get service $service -n doc-intel-app -o jsonpath='{.metadata.annotations}' | python3 -c "
-import sys, json
-try:
-    data = json.loads(sys.stdin.read())
-    neg = data.get('cloud.google.com/neg', 'MISSING')
-    backend_config = data.get('cloud.google.com/backend-config', 'MISSING')
-    print(f'    NEG: {neg}')
-    print(f'    BackendConfig: {backend_config}')
-except:
-    print('    Could not parse annotations')
-" || echo "    Service not found or no annotations"
+            kubectl get service $service -n doc-intel-app -o jsonpath='{.metadata.annotations}' | python3 -c 'import sys, json; input_data = sys.stdin.read().strip(); data = json.loads(input_data) if input_data else {}; print(f"    NEG: {data.get(\"cloud.google.com/neg\", \"MISSING\")}"); print(f"    BackendConfig: {data.get(\"cloud.google.com/backend-config\", \"MISSING\")}")' || echo "    Service not found or no annotations"
           done
           
           # 7. Final status summary
