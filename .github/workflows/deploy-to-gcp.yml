@@ -329,6 +329,13 @@ jobs:
             FORCE_REBUILD=true
           fi
           
+          # Force frontend rebuild if frontend image is missing
+          FORCE_FRONTEND_REBUILD=false
+          if [[ $FRONTEND_IMAGE_EXISTS -eq 0 ]]; then
+            echo "🔄 Frontend image missing - forcing frontend rebuild"
+            FORCE_FRONTEND_REBUILD=true
+          fi
+          
           # Set outputs based on code changes OR missing infrastructure
           if [[ $CODE_CHANGED == true ]] || [[ $FORCE_REBUILD == true ]]; then
             echo "AUTH_CHANGED=true" >> $GITHUB_OUTPUT
@@ -342,7 +349,7 @@ jobs:
           fi
           
           # Frontend rebuild logic
-          if [[ $FRONTEND_CODE_CHANGED == true ]] || [[ $FRONTEND_IMAGE_EXISTS -eq 0 ]]; then
+          if [[ $FRONTEND_CODE_CHANGED == true ]] || [[ $FORCE_FRONTEND_REBUILD == true ]]; then
             echo "✅ Frontend code changed or image missing - will rebuild"
             echo "FRONTEND_CHANGED=true" >> $GITHUB_OUTPUT
           else
