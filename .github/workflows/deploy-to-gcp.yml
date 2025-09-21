@@ -332,6 +332,25 @@ jobs:
           
           echo "✅ Secrets created/updated successfully"
 
+      - name: Deploy MySQL External Service
+        run: |
+          echo "🔗 Creating MySQL external service with correct IP..."
+          
+          # Get MySQL IP from Terraform outputs and create the external service
+          export MYSQL_PRIVATE_IP="${{ needs.infrastructure.outputs.mysql_private_ip }}"
+          echo "🔍 Using MySQL IP: $MYSQL_PRIVATE_IP"
+          
+          # Use envsubst to replace the placeholder in the MySQL external service
+          envsubst < kubernetes/03-mysql-external-service.yaml > /tmp/mysql-external-service-with-ip.yaml
+          
+          echo "📋 Generated MySQL external service configuration:"
+          cat /tmp/mysql-external-service-with-ip.yaml
+          
+          # Apply the MySQL external service
+          kubectl apply -f /tmp/mysql-external-service-with-ip.yaml
+          
+          echo "✅ MySQL external service deployed with correct IP"
+
       - name: Deploy Database and Dependencies
         run: |
           echo "🚀 Phase 2: Database & Dependencies"
