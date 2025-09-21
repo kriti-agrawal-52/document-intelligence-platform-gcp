@@ -293,12 +293,35 @@ jobs:
           # Create secrets using Terraform outputs and GitHub Secrets (idempotent)
           echo "🔐 Creating/updating secrets from Terraform outputs and GitHub Secrets..."
           
+          # Debug: Show what values we're using (without exposing sensitive data)
+          echo "📋 Database configuration:"
+          echo "  - MySQL Host: ${{ needs.infrastructure.outputs.mysql_private_ip }}"
+          echo "  - MySQL User: ${{ secrets.MYSQL_USER != '' && '***SET***' || '***EMPTY***' }}"
+          echo "  - MySQL Password: ${{ secrets.MYSQL_PASSWORD != '' && '***SET***' || '***EMPTY***' }}"
+          echo "  - MySQL Database: ${{ secrets.MYSQL_DATABASE != '' && secrets.MYSQL_DATABASE || '***EMPTY***' }}"
+          
+          # Set defaults for missing values (common Cloud SQL setup)
+          MYSQL_USER="${{ secrets.MYSQL_USER }}"
+          MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}"
+          MYSQL_DATABASE="${{ secrets.MYSQL_DATABASE }}"
+          
+          # Use defaults if GitHub Secrets are empty
+          if [[ -z "$MYSQL_USER" ]]; then
+            echo "⚠️  MYSQL_USER not set in GitHub Secrets, using 'root'"
+            MYSQL_USER="root"
+          fi
+          
+          if [[ -z "$MYSQL_DATABASE" ]]; then
+            echo "⚠️  MYSQL_DATABASE not set in GitHub Secrets, using 'document_intelligence'"
+            MYSQL_DATABASE="document_intelligence"
+          fi
+          
           kubectl create secret generic db-credentials \
             --namespace=doc-intel-app \
             --from-literal=MYSQL_HOST="${{ needs.infrastructure.outputs.mysql_private_ip }}" \
-            --from-literal=MYSQL_USER="${{ secrets.MYSQL_USER }}" \
-            --from-literal=MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}" \
-            --from-literal=MYSQL_DATABASE="${{ secrets.MYSQL_DATABASE }}" \
+            --from-literal=MYSQL_USER="$MYSQL_USER" \
+            --from-literal=MYSQL_PASSWORD="$MYSQL_PASSWORD" \
+            --from-literal=MYSQL_DATABASE="$MYSQL_DATABASE" \
             --from-literal=MYSQL_PORT="3306" \
             --dry-run=client -o yaml | kubectl apply -f -
           
