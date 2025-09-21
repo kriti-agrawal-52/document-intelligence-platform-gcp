@@ -292,17 +292,62 @@ jobs:
           echo "📋 Changed files:"
           git diff --name-only HEAD~1 HEAD || echo "No files changed"
           
-          # Check if microservice code changed
+          # Check if infrastructure exists (GKE cluster and images)
+          echo "🔍 Checking if infrastructure exists..."
+          CLUSTER_EXISTS=$(gcloud container clusters list --filter="name:${{ env.CLUSTER_NAME }}" --format="value(name)" | wc -l)
+          
+          # Check if container images exist in Artifact Registry
+          AUTH_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service --filter="tags:v1" --format="value(package)" | wc -l)
+          EXTRACTION_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service --filter="tags:v1" --format="value(package)" | wc -l)
+          SUMMARIZATION_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service --filter="tags:v1" --format="value(package)" | wc -l)
+          FRONTEND_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend --filter="tags:v1" --format="value(package)" | wc -l)
+          
+          echo "📋 Infrastructure status:"
+          echo "  - GKE Cluster exists: $([[ $CLUSTER_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
+          echo "  - Auth image v1 exists: $([[ $AUTH_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
+          echo "  - Extraction image v1 exists: $([[ $EXTRACTION_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
+          echo "  - Summarization image v1 exists: $([[ $SUMMARIZATION_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
+          echo "  - Frontend image v1 exists: $([[ $FRONTEND_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
+          
+          # Determine if we need to rebuild (code changes OR missing infrastructure)
+          CODE_CHANGED=false
           if git diff --name-only HEAD~1 HEAD | grep -E "(user_auth|text_extraction|text_summarization)/" | grep -v "test"; then
-            echo "🔄 Microservice code changed - rebuilding containers"
+            echo "🔄 Microservice code changed"
+            CODE_CHANGED=true
+          fi
+          
+          FRONTEND_CODE_CHANGED=false
+          if git diff --name-only HEAD~1 HEAD | grep -q "frontend/" || git diff --name-only HEAD~3 HEAD | grep -q "frontend/"; then
+            echo "🔄 Frontend code changed"
+            FRONTEND_CODE_CHANGED=true
+          fi
+          
+          # Force rebuild if infrastructure is missing
+          FORCE_REBUILD=false
+          if [[ $CLUSTER_EXISTS -eq 0 ]] || [[ $AUTH_IMAGE_EXISTS -eq 0 ]] || [[ $EXTRACTION_IMAGE_EXISTS -eq 0 ]] || [[ $SUMMARIZATION_IMAGE_EXISTS -eq 0 ]]; then
+            echo "🔄 Infrastructure missing - forcing rebuild of all services"
+            FORCE_REBUILD=true
+          fi
+          
+          # Set outputs based on code changes OR missing infrastructure
+          if [[ $CODE_CHANGED == true ]] || [[ $FORCE_REBUILD == true ]]; then
             echo "AUTH_CHANGED=true" >> $GITHUB_OUTPUT
             echo "EXTRACTION_CHANGED=true" >> $GITHUB_OUTPUT  
             echo "SUMMARIZATION_CHANGED=true" >> $GITHUB_OUTPUT
           else
-            echo "✅ No microservice code changes - using existing v1 images"
+            echo "✅ No microservice code changes and images exist - using existing v1 images"
             echo "AUTH_CHANGED=false" >> $GITHUB_OUTPUT
             echo "EXTRACTION_CHANGED=false" >> $GITHUB_OUTPUT
             echo "SUMMARIZATION_CHANGED=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Frontend rebuild logic
+          if [[ $FRONTEND_CODE_CHANGED == true ]] || [[ $FRONTEND_IMAGE_EXISTS -eq 0 ]]; then
+            echo "✅ Frontend code changed or image missing - will rebuild"
+            echo "FRONTEND_CHANGED=true" >> $GITHUB_OUTPUT
+          else
+            echo "⏭️ No frontend changes and image exists"
+            echo "FRONTEND_CHANGED=false" >> $GITHUB_OUTPUT
           fi
           
           # Check specific service changes for granular rebuilds
