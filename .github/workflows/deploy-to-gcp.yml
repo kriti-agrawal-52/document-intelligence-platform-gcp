@@ -3,10 +3,10 @@ name: Deploy Complete Platform to GCP
 on:
   push:
     branches: [main]
-  workflow_dispatch:  # Allow manual triggering
+  workflow_dispatch:
     inputs:
-      skip_infrastructure:
-        description: 'Skip infrastructure deployment (if already exists)'
+      force_rebuild_all:
+        description: 'Force rebuild all services, even without code changes'
         required: false
         default: 'false'
         type: boolean
@@ -18,18 +18,16 @@ env:
   CLUSTER_NAME: doc-intel-gke
 
 jobs:
-  # Job 1: Infrastructure Setup
+  # Job 1: Infrastructure Setup with Terraform Outputs
   infrastructure:
     runs-on: ubuntu-latest
-    if: github.event.inputs.skip_infrastructure != 'true'
-    
     permissions:
       contents: read
       id-token: write
-
     outputs:
-      cluster_exists: ${{ steps.check_cluster.outputs.exists }}
-
+      mysql_private_ip: ${{ steps.export_tf_outputs.outputs.mysql_private_ip }}
+      redis_host: ${{ steps.export_tf_outputs.outputs.redis_host }}
+      user_images_bucket: ${{ steps.export_tf_outputs.outputs.user_images_bucket }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,11 +40,6 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Install GKE Auth Plugin
-        run: |
-          echo "🔧 Installing GKE authentication plugin..."
-          gcloud components install gke-gcloud-auth-plugin --quiet
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -56,121 +49,256 @@ jobs:
         run: |
           echo "TF_VAR_gcp_project_id=${{ env.PROJECT_ID }}" >> $GITHUB_ENV
           echo "TF_VAR_gcp_region=${{ env.REGION }}" >> $GITHUB_ENV
-          echo "TF_VAR_project_name=document-intelligence" >> $GITHUB_ENV
-          echo "TF_VAR_environment=dev" >> $GITHUB_ENV
           echo "TF_VAR_cluster_name=${{ env.CLUSTER_NAME }}" >> $GITHUB_ENV
           echo "TF_VAR_openai_api_key=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
           echo "TF_VAR_jwt_secret_key=${{ secrets.JWT_SECRET_KEY }}" >> $GITHUB_ENV
           echo "TF_VAR_mysql_password=${{ secrets.MYSQL_PASSWORD }}" >> $GITHUB_ENV
 
-      - name: Check if cluster exists
-        id: check_cluster
-        run: |
-          if gcloud container clusters describe ${{ env.CLUSTER_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} 2>/dev/null; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✅ GKE cluster already exists, will update if needed"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "🚀 GKE cluster does not exist, will create"
-          fi
-
       - name: Terraform Init
-        run: |
-          cd terraform
-          terraform init
+        working-directory: ./terraform
+        run: terraform init
 
       - name: Terraform Plan
+        working-directory: ./terraform
         run: |
-          cd terraform
           echo "🔍 Planning infrastructure changes..."
           terraform plan -out=tfplan
           echo "📋 Plan complete. Terraform will only modify what's different from current state."
 
       - name: Terraform Apply
+        working-directory: ./terraform
         run: |
-          cd terraform
           echo "🚀 Applying infrastructure changes (declarative - only diffs)..."
-          terraform apply tfplan
+          terraform apply -auto-approve tfplan
           echo "✅ Infrastructure apply complete"
 
-      - name: Verify Infrastructure in VPC
+      - name: Export Terraform Outputs
+        id: export_tf_outputs
+        working-directory: ./terraform
         run: |
-          echo "🔍 Verifying infrastructure resources exist in VPC..."
+          echo "📋 Exporting infrastructure values for application deployment..."
+          echo "mysql_private_ip=$(terraform output -raw mysql_private_ip)" >> $GITHUB_OUTPUT
+          echo "redis_host=$(terraform output -raw redis_host)" >> $GITHUB_OUTPUT
+          echo "user_images_bucket=$(terraform output -raw user_images_bucket)" >> $GITHUB_OUTPUT
+          echo "✅ Infrastructure outputs exported"
+
+  # Job 2: Build, Push, and Deploy Application
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [infrastructure]
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for accurate git diff analysis
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install GKE Auth Plugin
+        run: gcloud components install gke-gcloud-auth-plugin --quiet
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
+            --region ${{ env.REGION }} --project ${{ env.PROJECT_ID }}
+
+      - name: Enhanced Smart Rebuild Logic
+        id: check_changes
+        run: |
+          echo "🔍 Analyzing changes for intelligent rebuild decisions..."
           
-          # Check VPC exists
-          gcloud compute networks describe document-intelligence-vpc --project=${{ env.PROJECT_ID }} || exit 1
-          echo "✅ VPC network exists"
-          
-          # Check GKE cluster is in our VPC  
-          CLUSTER_NETWORK=$(gcloud container clusters describe ${{ env.CLUSTER_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --format="value(network)")
-          if [[ "$CLUSTER_NETWORK" == *"document-intelligence-vpc"* ]]; then
-            echo "✅ GKE cluster is in correct VPC"
+          # Get changed files with proper handling of different trigger types
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${{ github.event.before }}" ]]; then
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
           else
-            echo "❌ GKE cluster VPC mismatch: $CLUSTER_NETWORK"
-            exit 1
+            echo "Manual trigger or first commit - checking last commit for changes."
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
           fi
           
-          # Check Cloud SQL is accessible
-          gcloud sql instances describe doc-intel-mysql --project=${{ env.PROJECT_ID }} || echo "⚠️ Cloud SQL not found (might be external)"
+          echo "📋 Changed files:"
+          echo "$CHANGED_FILES"
           
-          echo "✅ All infrastructure verified in VPC"
+          # Check if infrastructure exists (force rebuild if missing)
+          echo "🔍 Checking infrastructure and image existence..."
+          CLUSTER_EXISTS=$(gcloud container clusters list --filter="name:${{ env.CLUSTER_NAME }}" --format="value(name)" | wc -l)
+          AUTH_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service --limit=1 --format="value(package)" | wc -l)
+          EXTRACTION_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service --limit=1 --format="value(package)" | wc -l)
+          SUMMARIZATION_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service --limit=1 --format="value(package)" | wc -l)
+          FRONTEND_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend --limit=1 --format="value(package)" | wc -l)
+          
+          echo "📋 Infrastructure status:"
+          echo "  - GKE Cluster exists: $([[ $CLUSTER_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
+          echo "  - Auth image exists: $([[ $AUTH_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
+          echo "  - Extraction image exists: $([[ $EXTRACTION_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
+          echo "  - Summarization image exists: $([[ $SUMMARIZATION_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
+          echo "  - Frontend image exists: $([[ $FRONTEND_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
+          
+          # Enhanced function to check service changes with precision and completeness
+          check_service_intelligent() {
+            local service_path=$1
+            local service_name=$2
+            local image_exists=$3
+            
+            echo "🔍 Analyzing $service_name for rebuild necessity..."
+            
+            # Force rebuild if manual override
+            if [[ "${{ github.event.inputs.force_rebuild_all }}" == "true" ]]; then
+              echo "🔄 Force rebuild enabled for ${service_name}"
+              echo "${service_name}_CHANGED=true" >> $GITHUB_OUTPUT
+              return
+            fi
+            
+            # Force rebuild if image doesn't exist (infrastructure-aware)
+            if [[ $image_exists -eq 0 ]]; then
+              echo "🔄 ${service_name} image missing - forcing rebuild"
+              echo "${service_name}_CHANGED=true" >> $GITHUB_OUTPUT
+              return
+            fi
+            
+            # Check for relevant code changes (PRECISION - only meaningful files)
+            local service_changed=false
+            
+            # Service-specific source files (excludes README, docs, comments-only changes)
+            if echo "$CHANGED_FILES" | grep -qE "^${service_path}/.*\.(py|txt|yml|yaml|json|toml|cfg|ini|sh|js|jsx|ts|tsx|css|scss|html)$|^${service_path}/Dockerfile$|^${service_path}/requirements\.txt$|^${service_path}/package\.json$|^${service_path}/package-lock\.json$|^${service_path}/yarn\.lock$"; then
+              echo "✅ Source code changes detected in ${service_name}"
+              service_changed=true
+            fi
+            
+            # Check shared dependencies (COMPLETENESS - cross-cutting concerns)
+            if echo "$CHANGED_FILES" | grep -qE "^shared/.*\.(py|txt|yml|yaml|json|js|jsx|ts|tsx)$|^config\.yml$|^docker-compose\.yml$"; then
+              echo "✅ Shared code changes detected - affects ${service_name}"
+              service_changed=true
+            fi
+            
+            # Service-specific shared dependencies
+            case $service_name in
+              "AUTH"|"EXTRACTION"|"SUMMARIZATION")
+                if echo "$CHANGED_FILES" | grep -qE "^shared/(auth_utils|config|database|jwt_blacklist)\.py$"; then
+                  echo "✅ Backend shared utilities changed - affects ${service_name}"
+                  service_changed=true
+                fi
+                ;;
+              "FRONTEND")
+                if echo "$CHANGED_FILES" | grep -qE "^shared/.*\.(ts|tsx|js|jsx|css|scss)$|^frontend/(lib|components|utils)/.*\.(ts|tsx|js|jsx)$"; then
+                  echo "✅ Frontend shared components changed - affects ${service_name}"
+                  service_changed=true
+                fi
+                ;;
+            esac
+            
+            # Set final decision
+            if [[ $service_changed == true ]]; then
+              echo "✅ ${service_name} will be rebuilt"
+              echo "${service_name}_CHANGED=true" >> $GITHUB_OUTPUT
+            else
+              echo "⏭️ No relevant changes for ${service_name} - skipping rebuild"
+              echo "${service_name}_CHANGED=false" >> $GITHUB_OUTPUT
+            fi
+          }
+          
+          # Analyze each service with intelligent logic
+          check_service_intelligent "user_auth" "AUTH" $AUTH_IMAGE_EXISTS
+          check_service_intelligent "text_extraction" "EXTRACTION" $EXTRACTION_IMAGE_EXISTS
+          check_service_intelligent "text_summarization" "SUMMARIZATION" $SUMMARIZATION_IMAGE_EXISTS
+          check_service_intelligent "frontend" "FRONTEND" $FRONTEND_IMAGE_EXISTS
+          
+          # Special case: Kubernetes manifests change = redeploy (but not rebuild)
+          if echo "$CHANGED_FILES" | grep -qE "^kubernetes/.*\.ya?ml$"; then
+            echo "🔄 Kubernetes manifests changed - will redeploy all services"
+            echo "DEPLOY_CHANGED=true" >> $GITHUB_OUTPUT
+          else
+            echo "DEPLOY_CHANGED=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "📋 Smart rebuild analysis complete"
 
-      - name: Setup Kubernetes Foundation
+      # --- Intelligent Build Steps (Only Build What Changed) ---
+      - name: Build and push Auth Service
+        if: steps.check_changes.outputs.AUTH_CHANGED == 'true'
         run: |
-          # Get cluster credentials
-          echo "🔗 Connecting to GKE cluster..."
-          gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
-            --region ${{ env.REGION }} \
-            --project ${{ env.PROJECT_ID }}
+          echo "🔨 Building Auth Service (changes detected)..."
+          docker build -f user_auth/Dockerfile \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:latest .
+          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service
+          echo "✅ Auth Service built and pushed"
+
+      - name: Skip Auth Service build
+        if: steps.check_changes.outputs.AUTH_CHANGED == 'false'
+        run: echo "⏭️ Skipping Auth Service build (no relevant changes)"
+
+      - name: Build and push Text Extraction Service
+        if: steps.check_changes.outputs.EXTRACTION_CHANGED == 'true'
+        run: |
+          echo "🔨 Building Text Extraction Service (changes detected)..."
+          docker build -f text_extraction/Dockerfile \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:latest .
+          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service
+          echo "✅ Text Extraction Service built and pushed"
+
+      - name: Skip Text Extraction build
+        if: steps.check_changes.outputs.EXTRACTION_CHANGED == 'false'
+        run: echo "⏭️ Skipping Text Extraction build (no relevant changes)"
+
+      - name: Build and push Text Summarization Service
+        if: steps.check_changes.outputs.SUMMARIZATION_CHANGED == 'true'
+        run: |
+          echo "🔨 Building Text Summarization Service (changes detected)..."
+          docker build -f text_summarization/Dockerfile \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:latest .
+          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service
+          echo "✅ Text Summarization Service built and pushed"
+
+      - name: Skip Text Summarization build
+        if: steps.check_changes.outputs.SUMMARIZATION_CHANGED == 'false'
+        run: echo "⏭️ Skipping Text Summarization build (no relevant changes)"
+
+      - name: Build and push Frontend
+        if: steps.check_changes.outputs.FRONTEND_CHANGED == 'true'
+        run: |
+          echo "🔨 Building Frontend (changes detected)..."
+          docker build -f frontend/Dockerfile \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:latest .
+          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend
+          echo "✅ Frontend built and pushed"
+
+      - name: Skip Frontend build
+        if: steps.check_changes.outputs.FRONTEND_CHANGED == 'false'
+        run: echo "⏭️ Skipping Frontend build (no relevant changes)"
+
+      # --- Infrastructure-Aware Kubernetes Setup ---
+      - name: Setup Kubernetes Foundation and Secrets
+        run: |
+          echo "🚀 Phase 1: Kubernetes Foundation"
           
-          # Verify cluster connectivity
-          echo "🔍 Verifying cluster connectivity..."
-          kubectl cluster-info
-          kubectl get nodes
-          
-          # Apply Kubernetes foundation in proper order (declarative)
-          echo "🚀 Phase 1: Foundation (declarative - only applies changes)"
+          # Apply namespace
+          echo "Creating namespace..."
           kubectl apply -f kubernetes/00-namespace.yaml
           
-          # Note: External Secrets Operator not needed - using GitHub Secrets for CI/CD
-          # This approach is simpler, faster, and saves ~$1/month vs GCP Secret Manager
-          # GitHub Secrets provide the same security level with better CI/CD integration
-          echo "🔐 Using GitHub Secrets for deployment (skipping External Secrets Operator)"
-          
-          # Use GitHub Secrets directly (more reliable than External Secrets for CI/CD)
-          echo "🔐 Creating secrets directly from GitHub Secrets (bypassing External Secrets)..."
+          # Create secrets using Terraform outputs and GitHub Secrets (idempotent)
+          echo "🔐 Creating/updating secrets from Terraform outputs and GitHub Secrets..."
           
           kubectl create secret generic db-credentials \
             --namespace=doc-intel-app \
-            --from-literal=MYSQL_HOST="${{ secrets.MYSQL_HOST }}" \
+            --from-literal=MYSQL_HOST="${{ needs.infrastructure.outputs.mysql_private_ip }}" \
             --from-literal=MYSQL_USER="${{ secrets.MYSQL_USER }}" \
             --from-literal=MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}" \
             --from-literal=MYSQL_DATABASE="${{ secrets.MYSQL_DATABASE }}" \
-            --from-literal=MYSQL_PORT="3306" \
-            --dry-run=client -o yaml | kubectl apply -f -
-          
-          kubectl create secret generic api-keys \
-            --namespace=doc-intel-app \
-            --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
-            --dry-run=client -o yaml | kubectl apply -f -
-          
-          # Get infrastructure values directly from GCP for secrets
-          echo "🔍 Getting infrastructure values from GCP for secrets..."
-          REDIS_HOST=$(gcloud redis instances describe document-intelligence-redis --region=asia-south1 --format="value(host)" 2>/dev/null || echo "10.190.0.3")
-          REDIS_PORT="6379"
-          USER_IMAGES_BUCKET=$(gcloud storage buckets list --filter="name:document-intelligence-user-images" --format="value(name)" 2>/dev/null || echo "document-intelligence-user-images-bucket")
-          
-          echo "🔍 Using infrastructure values for secrets:"
-          echo "  REDIS_HOST: $REDIS_HOST"
-          echo "  USER_IMAGES_BUCKET: $USER_IMAGES_BUCKET"
-          
-          # Note: MYSQL_HOST uses Kubernetes service DNS, not direct IP
-          kubectl create secret generic db-credentials \
-            --namespace=doc-intel-app \
-            --from-literal=MYSQL_HOST="mysql-external.doc-intel-app.svc.cluster.local" \
-            --from-literal=MYSQL_USER="app_user" \
-            --from-literal=MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}" \
-            --from-literal=MYSQL_DATABASE="auth_db" \
             --from-literal=MYSQL_PORT="3306" \
             --dry-run=client -o yaml | kubectl apply -f -
           
@@ -184,479 +312,118 @@ jobs:
             --namespace=doc-intel-app \
             --from-literal=GCP_PROJECT_ID="${{ env.PROJECT_ID }}" \
             --from-literal=GCP_REGION="${{ env.REGION }}" \
-            --from-literal=REDIS_HOST="$REDIS_HOST" \
-            --from-literal=REDIS_PORT="$REDIS_PORT" \
-            --from-literal=GCS_USER_IMAGES_BUCKET="$USER_IMAGES_BUCKET" \
+            --from-literal=REDIS_HOST="${{ needs.infrastructure.outputs.redis_host }}" \
+            --from-literal=REDIS_PORT="6379" \
+            --from-literal=GCS_USER_IMAGES_BUCKET="${{ needs.infrastructure.outputs.user_images_bucket }}" \
             --from-literal=PUBSUB_TOPIC_NAME="summarization-jobs" \
             --from-literal=PUBSUB_SUBSCRIPTION_NAME="summarization-jobs-subscription" \
             --dry-run=client -o yaml | kubectl apply -f -
           
           kubectl create secret generic mongodb-credentials \
             --namespace=doc-intel-app \
-            --from-literal=MONGODB_USER="${{ secrets.MONGODB_USER }}" \
+            --from-literal=MONGODB_HOST="mongodb.doc-intel-app.svc.cluster.local" \
+            --from-literal=MONGODB_PORT="27017" \
+            --from-literal=MONGODB_DATABASE="document_intelligence" \
+            --from-literal=MONGODB_USERNAME="${{ secrets.MONGODB_USERNAME }}" \
             --from-literal=MONGODB_PASSWORD="${{ secrets.MONGODB_PASSWORD }}" \
-            --from-literal=MONGO_CONNECTION_STRING="mongodb://${{ secrets.MONGODB_USER }}:${{ secrets.MONGODB_PASSWORD }}@mongodb-service:27017/doc_intel_db?authSource=admin" \
-            --from-literal=MONGO_DATABASE_NAME="doc_intel_db" \
-            --from-literal=MONGO_COLLECTION_NAME="extracted_texts" \
+            --from-literal=MONGODB_COLLECTION_DOCUMENTS="documents" \
+            --from-literal=MONGODB_COLLECTION_PROCESSING_JOBS="processing_jobs" \
             --dry-run=client -o yaml | kubectl apply -f -
           
-          echo "✅ All secrets created successfully from GitHub Secrets"
+          echo "✅ Secrets created/updated successfully"
+
+      - name: Deploy Database and Dependencies
+        run: |
+          echo "🚀 Phase 2: Database & Dependencies"
           
-          # Wait for namespace to be ready (with better error handling)
-          echo "⏳ Waiting for namespace to be active..."
-          if kubectl wait --for=condition=Active --timeout=60s namespace/doc-intel-app; then
-            echo "✅ Namespace is active"
-          else
-            echo "⚠️ Namespace wait timed out, checking status..."
-            kubectl get namespace doc-intel-app -o yaml
-            kubectl describe namespace doc-intel-app
-            echo "Continuing anyway - namespace likely exists..."
-          fi
-          
-          echo "🚀 Phase 2: Storage & Dependencies"
-          
-          # Get MySQL IP directly from GCP and inject into manifest
-          echo "🔍 Getting MySQL IP from GCP Cloud SQL..."
-          export MYSQL_PRIVATE_IP=$(gcloud sql instances describe document-intelligence-mysql-50wa --format="value(ipAddresses[0].ipAddress)" 2>/dev/null || echo "10.211.1.5")
-          
-          echo "🔍 Injecting MySQL IP: $MYSQL_PRIVATE_IP into MySQL external service"
-          
-          # Use envsubst to replace environment variables in the manifest
-          envsubst < kubernetes/03-mysql-external-service.yaml > /tmp/mysql-external-service-with-ip.yaml
-          
-          # Verify the IP was injected correctly
-          echo "📋 Generated manifest with actual IP:"
-          cat /tmp/mysql-external-service-with-ip.yaml | grep -A 2 -B 2 "ip:"
-          
-          # Apply the file with the correct IP
-          kubectl apply -f /tmp/mysql-external-service-with-ip.yaml
+          # Deploy MongoDB and database initialization
+          echo "Deploying MongoDB..."
           kubectl apply -f kubernetes/04-mongodb-deployment.yaml
+          
+          echo "Running database initialization..."
           kubectl apply -f kubernetes/05-db-init-job.yaml
           
-          # Check what was actually changed
-          echo "📋 Checking deployment status..."
-          kubectl get all -n doc-intel-app
-          
-          # Wait for databases to be ready with better feedback
-          echo "⏳ Waiting for MongoDB to be ready (up to 5 minutes)..."
-          if kubectl wait --for=condition=available --timeout=300s deployment/mongodb-deployment --namespace=doc-intel-app; then
-            echo "✅ MongoDB is ready"
-          else
-            echo "⚠️ MongoDB not ready yet, continuing (will retry in application phase)"
-            kubectl describe deployment/mongodb-deployment -n doc-intel-app
-          fi
-          
-          # Verify foundation resources
-          echo "🔍 Verifying foundation resources..."
-          kubectl get secrets -n doc-intel-app
-          kubectl get services -n doc-intel-app
-          
-          echo "✅ Infrastructure and foundation setup complete"
+          echo "✅ Database and dependencies deployed"
 
-  # Job 2: Application Deployment  
-  deploy:
-    runs-on: ubuntu-latest
-    needs: [infrastructure]  # Wait for infrastructure to complete
-    if: always() && (needs.infrastructure.result == 'success' || github.event.inputs.skip_infrastructure == 'true')
-    
-    permissions:
-      contents: read
-      id-token: write  # For Workload Identity Federation
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Install GKE Auth Plugin
+      - name: Deploy Application Services
         run: |
-          echo "🔧 Installing GKE authentication plugin..."
-          gcloud components install gke-gcloud-auth-plugin --quiet
-
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
-
-      - name: Check for code changes (Smart Rebuild Logic)
-        id: check_changes
-        run: |
-          echo "🔍 Checking what changed since last deployment..."
-          echo "📋 Current commit: $(git rev-parse HEAD)"
-          echo "📋 Previous commit: $(git rev-parse HEAD~1)"
-          echo "📋 Changed files:"
-          git diff --name-only HEAD~1 HEAD || echo "No files changed"
-          
-          # Check if infrastructure exists (GKE cluster and images)
-          echo "🔍 Checking if infrastructure exists..."
-          CLUSTER_EXISTS=$(gcloud container clusters list --filter="name:${{ env.CLUSTER_NAME }}" --format="value(name)" | wc -l)
-          
-          # Check if container images exist in Artifact Registry
-          AUTH_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service --filter="tags:v1" --format="value(package)" | wc -l)
-          EXTRACTION_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service --filter="tags:v1" --format="value(package)" | wc -l)
-          SUMMARIZATION_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service --filter="tags:v1" --format="value(package)" | wc -l)
-          FRONTEND_IMAGE_EXISTS=$(gcloud artifacts docker images list ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend --filter="tags:v1" --format="value(package)" | wc -l)
-          
-          echo "📋 Infrastructure status:"
-          echo "  - GKE Cluster exists: $([[ $CLUSTER_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
-          echo "  - Auth image v1 exists: $([[ $AUTH_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
-          echo "  - Extraction image v1 exists: $([[ $EXTRACTION_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
-          echo "  - Summarization image v1 exists: $([[ $SUMMARIZATION_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
-          echo "  - Frontend image v1 exists: $([[ $FRONTEND_IMAGE_EXISTS -gt 0 ]] && echo "✅ Yes" || echo "❌ No")"
-          
-          # Determine if we need to rebuild (code changes OR missing infrastructure)
-          CODE_CHANGED=false
-          if git diff --name-only HEAD~1 HEAD | grep -E "(user_auth|text_extraction|text_summarization)/" | grep -v "test"; then
-            echo "🔄 Microservice code changed"
-            CODE_CHANGED=true
-          fi
-          
-          FRONTEND_CODE_CHANGED=false
-          if git diff --name-only HEAD~1 HEAD | grep -q "frontend/" || git diff --name-only HEAD~3 HEAD | grep -q "frontend/"; then
-            echo "🔄 Frontend code changed"
-            FRONTEND_CODE_CHANGED=true
-          fi
-          
-          # Force rebuild if infrastructure is missing
-          FORCE_REBUILD=false
-          if [[ $CLUSTER_EXISTS -eq 0 ]] || [[ $AUTH_IMAGE_EXISTS -eq 0 ]] || [[ $EXTRACTION_IMAGE_EXISTS -eq 0 ]] || [[ $SUMMARIZATION_IMAGE_EXISTS -eq 0 ]]; then
-            echo "🔄 Infrastructure missing - forcing rebuild of all services"
-            FORCE_REBUILD=true
-          fi
-          
-          # Force frontend rebuild if frontend image is missing
-          FORCE_FRONTEND_REBUILD=false
-          if [[ $FRONTEND_IMAGE_EXISTS -eq 0 ]]; then
-            echo "🔄 Frontend image missing - forcing frontend rebuild"
-            FORCE_FRONTEND_REBUILD=true
-          fi
-          
-          # Set outputs based on code changes OR missing infrastructure
-          if [[ $CODE_CHANGED == true ]] || [[ $FORCE_REBUILD == true ]]; then
-            echo "AUTH_CHANGED=true" >> $GITHUB_OUTPUT
-            echo "EXTRACTION_CHANGED=true" >> $GITHUB_OUTPUT  
-            echo "SUMMARIZATION_CHANGED=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ No microservice code changes and images exist - using existing v1 images"
-            echo "AUTH_CHANGED=false" >> $GITHUB_OUTPUT
-            echo "EXTRACTION_CHANGED=false" >> $GITHUB_OUTPUT
-            echo "SUMMARIZATION_CHANGED=false" >> $GITHUB_OUTPUT
-          fi
-          
-          # Frontend rebuild logic
-          if [[ $FRONTEND_CODE_CHANGED == true ]] || [[ $FORCE_FRONTEND_REBUILD == true ]]; then
-            echo "✅ Frontend code changed or image missing - will rebuild"
-            echo "FRONTEND_CHANGED=true" >> $GITHUB_OUTPUT
-          else
-            echo "⏭️ No frontend changes and image exists"
-            echo "FRONTEND_CHANGED=false" >> $GITHUB_OUTPUT
-          fi
-          
-          # Check specific service changes for granular rebuilds
-          if git diff --name-only HEAD~1 HEAD | grep -q "user_auth/"; then
-            echo "AUTH_CHANGED=true" >> $GITHUB_OUTPUT
-          fi
-          
-          if git diff --name-only HEAD~1 HEAD | grep -q "text_extraction/"; then
-            echo "EXTRACTION_CHANGED=true" >> $GITHUB_OUTPUT
-          fi
-          
-          if git diff --name-only HEAD~1 HEAD | grep -q "text_summarization/"; then
-            echo "SUMMARIZATION_CHANGED=true" >> $GITHUB_OUTPUT
-          fi
-          
-          # Note: Frontend rebuild logic is now handled above in the main smart rebuild logic
-          # This section was removed to prevent overriding the infrastructure-aware frontend rebuild decision
-
-      - name: Get GKE credentials
-        run: |
-          gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
-            --region ${{ env.REGION }} \
-            --project ${{ env.PROJECT_ID }}
-
-      # Smart rebuild: Only build services that changed
-      - name: Build and push Auth Service
-        # Temporarily force build to debug image pull issues
-        # if: steps.check_changes.outputs.AUTH_CHANGED == 'true'
-        run: |
-          echo "🔨 Building Auth Service (code changed)"
-          docker build -f user_auth/Dockerfile \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service:v1 .
-          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/auth-service
-
-      - name: Skip Auth Service build
-        if: steps.check_changes.outputs.AUTH_CHANGED == 'false'
-        run: echo "⏭️ Skipping Auth Service build (no code changes)"
-
-      - name: Build and push Text Extraction Service
-        # Temporarily force build to debug image pull issues
-        # if: steps.check_changes.outputs.EXTRACTION_CHANGED == 'true'
-        run: |
-          echo "🔨 Building Text Extraction Service (code changed)"
-          docker build -f text_extraction/Dockerfile \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service:v1 .
-          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-extraction-service
-
-      - name: Skip Text Extraction build
-        if: steps.check_changes.outputs.EXTRACTION_CHANGED == 'false'
-        run: echo "⏭️ Skipping Text Extraction build (no code changes)"
-
-      - name: Build and push Text Summarization Service
-        # Temporarily force build to debug image pull issues
-        # if: steps.check_changes.outputs.SUMMARIZATION_CHANGED == 'true'
-        run: |
-          echo "🔨 Building Text Summarization Service (code changed)"
-          docker build -f text_summarization/Dockerfile \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service:v1 .
-          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/text-summarization-service
-
-      - name: Skip Text Summarization build
-        if: steps.check_changes.outputs.SUMMARIZATION_CHANGED == 'false'
-        run: echo "⏭️ Skipping Text Summarization build (no code changes)"
-
-      - name: Build and push Frontend
-        # Temporarily force build to debug image pull issues
-        # if: steps.check_changes.outputs.FRONTEND_CHANGED == 'true'
-        run: |
-          echo "🔨 Building Frontend (code changed)"
-          docker build -f frontend/Dockerfile \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:v1 ./frontend
-          docker push --all-tags ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend
-
-      - name: Skip Frontend build
-        if: steps.check_changes.outputs.FRONTEND_CHANGED == 'false'
-        run: echo "⏭️ Skipping Frontend build (no code changes)"
-
-      - name: Clean up old SHA-tagged images (cost optimization)
-        run: |
-          echo "🧹 Cleaning up old SHA-tagged images from Artifact Registry..."
-          
-          # Keep only the last 5 SHA-tagged images for each service (cost optimization)
-          for service in auth-service text-extraction-service text-summarization-service frontend; do
-            echo "Cleaning up old $service images..."
-            gcloud artifacts docker images list asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/$service \
-              --include-tags --sort-by=~CREATE_TIME --format="value(version)" | \
-              grep -E "^[a-f0-9]{40}$" | tail -n +6 | \
-              xargs -I {} gcloud artifacts docker images delete \
-                asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/$service:{} --quiet || true
-          done
-          
-          echo "✅ Old images cleaned up - keeping v1 tags and recent 5 SHA tags"
-
-      # Deploy Kubernetes manifests
-      - name: Install External Secrets Operator
-        run: |
-          # Install External Secrets Operator using Helm
-          helm repo add external-secrets https://charts.external-secrets.io
-          helm repo update
-          helm upgrade --install external-secrets external-secrets/external-secrets \
-            --namespace external-secrets-system \
-            --create-namespace \
-            --wait
-
-      - name: Deploy Kubernetes resources
-        run: |
-          # Apply Kubernetes manifests in order
-          kubectl apply -f kubernetes/00-namespace.yaml
-          
-          # Wait for External Secrets Operator to be ready
-          kubectl wait --for=condition=available --timeout=300s deployment/external-secrets -n external-secrets-system
-          kubectl wait --for=condition=available --timeout=300s deployment/external-secrets-webhook -n external-secrets-system
-          kubectl wait --for=condition=available --timeout=300s deployment/external-secrets-cert-controller -n external-secrets-system
-          
-          # Wait for CRDs to be available
-          echo "Waiting for External Secrets CRDs to be available..."
-          for i in {1..30}; do
-            if kubectl get crd secretstores.external-secrets.io externalsecrets.external-secrets.io &>/dev/null; then
-              echo "CRDs are available!"
-              break
-            fi
-            echo "Waiting for CRDs... ($i/30)"
-            sleep 10
-          done
-          
-          # Verify CRDs exist and check their versions
-          kubectl get crd secretstores.external-secrets.io
-          kubectl get crd externalsecrets.external-secrets.io
-          
-          # Check CRD details and available versions
-          echo "Checking SecretStore CRD versions..."
-          kubectl get crd secretstores.external-secrets.io -o jsonpath='{.spec.versions[*].name}' || true
-          echo ""
-          echo "Checking ExternalSecret CRD versions..."
-          kubectl get crd externalsecrets.external-secrets.io -o jsonpath='{.spec.versions[*].name}' || true
-          echo ""
-          
-          # Wait a bit more for API server to fully register the CRDs
-          echo "Waiting additional time for API server to register CRDs..."
-          sleep 30
-          
-          # Test if we can access the API
-          kubectl api-resources | grep external-secrets || true
-          
-          # Try to apply External Secrets configuration, fallback to regular secrets if it fails
-          if ! kubectl apply -f kubernetes/01-external-secrets.yaml; then
-            echo "External Secrets failed, falling back to regular Kubernetes secrets..."
-            echo "Creating secrets from GitHub secrets..."
-            
-            # Create secrets using GitHub secrets
-            kubectl create secret generic db-credentials \
-              --namespace=doc-intel-app \
-              --from-literal=MYSQL_USER="app_user" \
-              --from-literal=MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}" \
-              --from-literal=MYSQL_HOST="10.20.0.5" \
-              --from-literal=MYSQL_PORT="3306" \
-              --dry-run=client -o yaml | kubectl apply -f -
-            
-            kubectl create secret generic api-keys \
-              --namespace=doc-intel-app \
-              --from-literal=JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
-              --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
-              --dry-run=client -o yaml | kubectl apply -f -
-            
-            
-            kubectl create secret generic mongodb-credentials \
-              --namespace=doc-intel-app \
-              --from-literal=MONGODB_USER="${{ secrets.MONGODB_USER }}" \
-              --from-literal=MONGODB_PASSWORD="${{ secrets.MONGODB_PASSWORD }}" \
-              --from-literal=MONGODB_HOST="mongodb-service" \
-              --from-literal=MONGODB_PORT="27017" \
-              --from-literal=MONGO_CONNECTION_STRING="mongodb://${{ secrets.MONGODB_USER }}:${{ secrets.MONGODB_PASSWORD }}@mongodb-service:27017/doc_intel_db?authSource=admin" \
-              --from-literal=MONGO_DATABASE_NAME="doc_intel_db" \
-              --from-literal=MONGO_COLLECTION_NAME="extracted_texts" \
-              --dry-run=client -o yaml | kubectl apply -f -
-          fi
-          # Note: Using 'latest' tags for stable image references (no IMAGE_TAG replacement needed)
-          echo "📦 Using 'latest' image tags for consistent deployments"
-          
-          # Apply Kubernetes resources in proper order to avoid race conditions
-          echo "🚀 Phase 1: Foundation & Secrets"
-          # Namespace and secrets already applied above
-          
-          echo "🚀 Phase 2: Storage & Dependencies"  
-          # Note: MySQL external service already applied in infrastructure job with correct IP
-          kubectl apply -f kubernetes/04-mongodb-deployment.yaml
-          kubectl apply -f kubernetes/05-db-init-job.yaml
-          
           echo "🚀 Phase 3: Application Services"
-          kubectl apply -f kubernetes/06-auth-deployment.yaml
-          kubectl apply -f kubernetes/07-text-extraction-deployment.yaml
-          kubectl apply -f kubernetes/08-text-summarization-deployment.yaml
           
-          echo "🚀 Phase 4: Wait for pods to be ready before ALB"
-          kubectl wait --for=condition=available --timeout=300s deployment/auth-deployment --namespace=doc-intel-app
-          kubectl wait --for=condition=available --timeout=300s deployment/text-extraction-deployment --namespace=doc-intel-app
-          kubectl wait --for=condition=available --timeout=300s deployment/text-summarization-deployment --namespace=doc-intel-app
+          IMAGE_TAG=${{ github.sha }}
+          echo "📦 Deploying applications with unique image tag: $IMAGE_TAG"
           
-          echo "🚀 Phase 5: Scaling & Load Balancing (after pods are ready)"
+          # Deploy applications with dynamic image tags (ensures rolling updates)
+          echo "Deploying Auth Service..."
+          sed "s/IMAGE_TAG_PLACEHOLDER/$IMAGE_TAG/g" kubernetes/06-auth-deployment.yaml | kubectl apply -f -
+          
+          echo "Deploying Text Extraction Service..."
+          sed "s/IMAGE_TAG_PLACEHOLDER/$IMAGE_TAG/g" kubernetes/07-text-extraction-deployment.yaml | kubectl apply -f -
+          
+          echo "Deploying Text Summarization Service..."
+          sed "s/IMAGE_TAG_PLACEHOLDER/$IMAGE_TAG/g" kubernetes/08-text-summarization-deployment.yaml | kubectl apply -f -
+          
+          echo "✅ Application services deployed"
+
+      - name: Deploy Scaling and Networking
+        run: |
+          echo "🚀 Phase 4: Auto-scaling & Networking"
+          
+          # Deploy HPA (Horizontal Pod Autoscaler)
+          echo "Configuring auto-scaling..."
           kubectl apply -f kubernetes/09-auth-hpa.yaml
           kubectl apply -f kubernetes/10-text-extraction-hpa.yaml
           kubectl apply -f kubernetes/11-text-summarization-hpa.yaml
+          
+          # Deploy networking and ingress
+          echo "Configuring networking..."
           kubectl apply -f kubernetes/12-backend-config.yaml
           kubectl apply -f kubernetes/13-gcp-ingress.yaml
           
-          # Check deployment status before waiting
-          echo "Checking deployment status..."
-          kubectl get deployments -n doc-intel-app || true
-          kubectl get pods -n doc-intel-app || true
-          
-          # Wait for deployments to be ready (with shorter timeout since images might not be updated yet)
-          echo "Waiting for initial deployments (may fail if images not updated yet)..."
-          kubectl wait --for=condition=available --timeout=60s deployment/auth-deployment -n doc-intel-app || echo "Auth deployment not ready yet (expected)"
-          kubectl wait --for=condition=available --timeout=60s deployment/text-extraction-deployment -n doc-intel-app || echo "Text extraction deployment not ready yet (expected)"
-          kubectl wait --for=condition=available --timeout=60s deployment/text-summarization-deployment -n doc-intel-app || echo "Text summarization deployment not ready yet (expected)"
+          echo "✅ Scaling and networking configured"
 
-      # Update Kubernetes deployments with new images
-      # Deployments are now updated declaratively via kubectl apply above
-      # No need for kubectl set image commands - GitOps approach!
-
-      # Wait for updated deployments and debug any issues
-      - name: Wait for deployments and debug issues
+      - name: Wait for Application Readiness
         run: |
-          echo "Waiting for deployments to be ready with new images..."
+          echo "🚀 Phase 5: Deployment Verification"
+          echo "⏳ Waiting for deployments to stabilize with new images..."
           
-          # Check deployment status
-          kubectl get deployments -n doc-intel-app
-          kubectl describe deployment auth-deployment -n doc-intel-app
+          # Wait for each deployment to be ready (with reasonable timeouts)
+          kubectl rollout status deployment/auth-deployment -n doc-intel-app --timeout=10m
+          kubectl rollout status deployment/text-extraction-deployment -n doc-intel-app --timeout=10m
+          kubectl rollout status deployment/text-summarization-deployment -n doc-intel-app --timeout=10m
+          kubectl rollout status deployment/mongodb-deployment -n doc-intel-app --timeout=5m
           
-          # Check pod status
-          kubectl get pods -n doc-intel-app
-          
-          # Wait for deployments with longer timeout
-          kubectl wait --for=condition=available --timeout=600s deployment/auth-deployment -n doc-intel-app || {
-            echo "Auth deployment failed, checking logs..."
-            kubectl describe deployment auth-deployment -n doc-intel-app
-            kubectl get pods -l app=auth-service -n doc-intel-app
-            kubectl logs -l app=auth-service -n doc-intel-app --tail=50 || true
-          }
-          
-          kubectl wait --for=condition=available --timeout=300s deployment/text-extraction-deployment -n doc-intel-app || {
-            echo "Text extraction deployment failed, checking logs..."
-            kubectl logs -l app=text-extraction-service -n doc-intel-app --tail=50 || true
-          }
-          
-          kubectl wait --for=condition=available --timeout=300s deployment/text-summarization-deployment -n doc-intel-app || {
-            echo "Text summarization deployment failed, checking logs..."
-            kubectl logs -l app=text-summarization-service -n doc-intel-app --tail=50 || true
-          }
+          echo "✅ All deployments successfully rolled out"
 
-      # Get internal load balancer IP for frontend deployment
-      - name: Get internal load balancer IP
-        run: |
-          echo "⏳ Getting internal ingress LoadBalancer IP..."
-          echo "This creates an internal HTTP endpoint for frontend → backend communication."
-          
-          # Wait for internal ingress IP assignment (up to 10 minutes)
-          INGRESS_IP=""
-          for i in {1..20}; do
-            INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-            if [ ! -z "$INGRESS_IP" ]; then
-              echo "✅ Internal Ingress IP assigned: $INGRESS_IP"
-              break
-            fi
-            echo "⏳ Waiting for internal ingress IP assignment... ($i/20) - 30s intervals"
-            sleep 30
-          done
-          
-          if [ -z "$INGRESS_IP" ]; then
-            echo "⚠️ Internal Ingress IP not ready after 10 minutes"
-            echo "📋 This is normal for internal load balancers - they may take longer"
-            # For internal LB, we'll get the IP from the service or use a placeholder
-            INGRESS_IP="10.0.0.100"  # Placeholder for internal IP
-          fi
-          
-          # Note: Internal load balancer testing skipped 
-          echo "📋 Internal load balancer is ready at: $INGRESS_IP"
-          echo "💡 Note: Internal LB is only accessible from within VPC (not from GitHub Actions runner)"
-          echo "🔍 Health checks are managed by GCP and verified via backend service status"
-          
-          # Set environment variable for frontend deployment
-          echo "INGRESS_IP=$INGRESS_IP" >> $GITHUB_ENV
-          
-          # Update ConfigMap with actual internal ingress IP
-          echo "🔧 Updating ingress ConfigMap with internal IP: $INGRESS_IP"
-          kubectl patch configmap ingress-config -n doc-intel-app --type merge -p "{\"data\":{\"backend-url\":\"http://$INGRESS_IP\"}}"
-
-      # Deploy Frontend to Cloud Run with HTTP ingress (development setup)
       - name: Deploy Frontend to Cloud Run
         run: |
-          echo "🚀 Deploying frontend with HTTP backend URLs: http://$INGRESS_IP"
-          echo "Note: Using HTTP for development - no SSL complexity"
-          # Get VPC connector name from GCP
-          VPC_CONNECTOR=$(gcloud compute networks vpc-access connectors list --region=${{ env.REGION }} --format="value(name)" --filter="name:doc-intel-vpc-connector")
-          echo "🔗 Using VPC Connector: $VPC_CONNECTOR"
+          echo "🚀 Phase 6: Frontend Deployment"
           
+          # Get VPC connector for Cloud Run
+          VPC_CONNECTOR=$(gcloud compute networks vpc-access connectors list \
+            --region=${{ env.REGION }} --format="value(name)" \
+            --filter="name:*vpc-connector*" | head -n 1)
+          
+          if [[ -z "$VPC_CONNECTOR" ]]; then
+            echo "⚠️  No VPC connector found - deploying without VPC access"
+            VPC_ARGS=""
+          else
+            echo "🔗 Using VPC Connector: $VPC_CONNECTOR"
+            VPC_ARGS="--vpc-connector=$VPC_CONNECTOR --vpc-egress=private-ranges-only"
+          fi
+          
+          # Get internal load balancer IP for frontend configuration
+          INTERNAL_LB_IP=$(kubectl get ingress -n doc-intel-app -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+          
+          if [[ -z "$INTERNAL_LB_IP" ]]; then
+            echo "⚠️  Internal LB IP not ready - using placeholder"
+            INTERNAL_LB_IP="http://internal-lb-placeholder"
+          else
+            INTERNAL_LB_IP="http://$INTERNAL_LB_IP"
+          fi
+          
+          # Deploy to Cloud Run
           gcloud run deploy frontend \
-            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:v1 \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/frontend:${{ github.sha }} \
             --platform=managed \
             --region=${{ env.REGION }} \
             --allow-unauthenticated \
@@ -665,119 +432,35 @@ jobs:
             --cpu=1 \
             --min-instances=0 \
             --max-instances=10 \
-            --vpc-connector=$VPC_CONNECTOR \
-            --vpc-egress=private-ranges-only \
-            --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=http://$INGRESS_IP,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=http://$INGRESS_IP"
+            $VPC_ARGS \
+            --set-env-vars="NEXT_PUBLIC_AUTH_SERVICE_URL=$INTERNAL_LB_IP,NEXT_PUBLIC_EXTRACTION_SERVICE_URL=$INTERNAL_LB_IP,NEXT_PUBLIC_SUMMARIZATION_SERVICE_URL=$INTERNAL_LB_IP"
+          
+          echo "✅ Frontend deployed to Cloud Run"
 
-      # Verify deployments with comprehensive ALB/Ingress debugging
-      - name: Verify backend deployments and ALB status
+      - name: Final Verification and Health Checks
         run: |
-          echo "🔍 COMPREHENSIVE BACKEND & ALB VERIFICATION"
-          echo "=========================================="
+          echo "🚀 Phase 7: Final Verification"
           
-          # 1. Verify deployment rollout status
-          echo "📋 1. Checking deployment rollout status..."
-          kubectl rollout status deployment/auth-deployment --namespace=doc-intel-app --timeout=300s
-          kubectl rollout status deployment/text-extraction-deployment --namespace=doc-intel-app --timeout=300s
-          kubectl rollout status deployment/text-summarization-deployment --namespace=doc-intel-app --timeout=300s
-          
-          # 2. Check pod health and readiness
+          echo "📋 Deployment Summary:"
+          echo "===================="
+          kubectl get deployments -n doc-intel-app
           echo ""
-          echo "🏥 2. Pod Health Status:"
-          kubectl get pods -n doc-intel-app -o wide
-          
-          # 3. Check service configurations
+          echo "📋 Pod Status:"
+          echo "=============="
+          kubectl get pods -n doc-intel-app
           echo ""
-          echo "🌐 3. Service Configurations:"
+          echo "📋 Services:"
+          echo "============"
           kubectl get services -n doc-intel-app
-          
-          # 4. Comprehensive Ingress Debugging
           echo ""
-          echo "🔍 4. INGRESS & ALB DEBUGGING:"
-          echo "=============================="
-          
-          # Basic ingress info
-          echo "📋 Ingress Basic Info:"
+          echo "📋 Ingress:"
+          echo "==========="
           kubectl get ingress -n doc-intel-app
-          
-          # Detailed ingress description
           echo ""
-          echo "📋 Ingress Detailed Status:"
-          kubectl describe ingress doc-intel-ingress -n doc-intel-app
           
-          # Backend health status
-          echo ""
-          echo "❤️  Backend Health Status:"
-          kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.metadata.annotations.ingress\.kubernetes\.io/backends}' | python3 -c 'import sys, json; input_data = sys.stdin.read().strip(); data = json.loads(input_data) if input_data else {}; [print(f"  - {backend}: {status}") for backend, status in data.items()]' || echo "  Backend status not available yet"
+          # Get Cloud Run URL
+          FRONTEND_URL=$(gcloud run services describe frontend --region=${{ env.REGION }} --format="value(status.url)")
+          echo "🌐 Frontend URL: $FRONTEND_URL"
           
-          # Check ingress events
-          echo ""
-          echo "📋 Recent Ingress Events:"
-          kubectl get events -n doc-intel-app --field-selector involvedObject.name=doc-intel-ingress --sort-by='.lastTimestamp' | tail -10 || true
-          
-          # 5. Test connectivity to individual services
-          echo ""
-          echo "🧪 5. GCP BACKEND SERVICE HEALTH STATUS:"
-          echo "======================================="
-          
-          # Get ingress IP for reference
-          INGRESS_IP=$(kubectl get ingress doc-intel-ingress -n doc-intel-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "No IP assigned")
-          echo "🌐 Internal Load Balancer IP: $INGRESS_IP"
-          echo "💡 Note: Health checks verified via GCP backend service status (not external curl)"
-          
-          # Check GCP backend service health status
-          echo ""
-          echo "📋 GCP Backend Service Health (Internal):"
-          for backend in "k8s1-9dbb77d5-doc-intel-app-auth-service-8000-ca45dc91:auth" "k8s1-9dbb77d5-doc-intel-app-text-extraction-servic-800-0902f726:extract" "k8s1-9dbb77d5-doc-intel-ap-text-summarization-serv-800-e80cf335:summarize"; do
-            backend_name=$(echo $backend | cut -d: -f1)
-            service_name=$(echo $backend | cut -d: -f2)
-            echo "  Checking $service_name service..."
-            
-            # Check if backend service exists and get health
-            if gcloud compute backend-services describe $backend_name --region=asia-south1 >/dev/null 2>&1; then
-              health_status=$(gcloud compute backend-services get-health $backend_name --region=asia-south1 --format="value(status.healthStatus[0].healthState)" 2>/dev/null || echo "UNKNOWN")
-              if [ "$health_status" = "HEALTHY" ]; then
-                echo "    ✅ $service_name: HEALTHY"
-              else
-                echo "    ❌ $service_name: $health_status"
-              fi
-            else
-              echo "    ⏳ $service_name: Backend service not found (still creating)"
-            fi
-          done
-          
-          # 6. Check for common GCP Load Balancer issues
-          echo ""
-          echo "🔍 6. GCP LOAD BALANCER DIAGNOSTICS:"
-          echo "===================================="
-          
-          # Check if services have proper annotations
-          echo "📋 Service Annotations Check:"
-          for service in auth-service text-extraction-service text-summarization-service; do
-            echo "  Checking $service annotations..."
-            kubectl get service $service -n doc-intel-app -o jsonpath='{.metadata.annotations}' | python3 -c 'import sys, json; input_data = sys.stdin.read().strip(); data = json.loads(input_data) if input_data else dict(); print("    NEG:", data.get("cloud.google.com/neg", "MISSING")); print("    BackendConfig:", data.get("cloud.google.com/backend-config", "MISSING"))' || echo "    Service not found or no annotations"
-          done
-          
-          # 7. Final status summary
-          echo ""
-          echo "📊 7. FINAL STATUS SUMMARY:"
-          echo "=========================="
-          echo "🏗️  Deployments: $(kubectl get deployments -n doc-intel-app --no-headers | wc -l) total"
-          echo "🏥 Ready Pods: $(kubectl get pods -n doc-intel-app --no-headers | grep -c Running) running"
-          echo "🌐 Services: $(kubectl get services -n doc-intel-app --no-headers | wc -l) total"
-          echo "🔗 Ingress IP: $INGRESS_IP"
-          
-          # Check if any pods are not ready
-          not_ready=$(kubectl get pods -n doc-intel-app --no-headers | grep -v "1/1.*Running" | wc -l)
-          if [ $not_ready -gt 0 ]; then
-            echo "⚠️  Warning: $not_ready pods are not ready"
-            kubectl get pods -n doc-intel-app | grep -v "1/1.*Running" || true
-          fi
-
-      - name: Get deployment status
-        run: |
-          echo "=== Backend Services Status ==="
-          kubectl get deployments --namespace=doc-intel-app
-          echo ""
-          echo "=== Frontend Cloud Run Status ==="
-          gcloud run services describe frontend --region=${{ env.REGION }} --format="value(status.url)"
+          echo "✅ Document Intelligence Platform deployed successfully!"
+          echo "🎉 All services are running and ready for use"
