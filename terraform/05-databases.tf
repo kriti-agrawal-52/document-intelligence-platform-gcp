@@ -34,6 +34,13 @@ resource "google_sql_database_instance" "mysql_instance" {
   database_version = "MYSQL_8_0"
   region           = var.gcp_region
   
+  # Timeout for Cloud SQL creation - private network setup can take 20+ minutes
+  timeouts {
+    create = "30m"
+    update = "20m"
+    delete = "20m"
+  }
+  
   settings {
     tier = "db-f1-micro"  # Smallest instance for development (equivalent to AWS db.t3.micro)
     
