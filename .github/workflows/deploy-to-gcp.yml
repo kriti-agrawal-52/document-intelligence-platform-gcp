@@ -217,7 +217,7 @@ jobs:
           
           # Get MySQL IP directly from GCP and inject into manifest
           echo "🔍 Getting MySQL IP from GCP Cloud SQL..."
-          export MYSQL_PRIVATE_IP=$(gcloud sql instances describe document-intelligence-mysql-swzt --format="value(ipAddresses[0].ipAddress)" 2>/dev/null || echo "10.190.1.3")
+          export MYSQL_PRIVATE_IP=$(gcloud sql instances describe document-intelligence-mysql-50wa --format="value(ipAddresses[0].ipAddress)" 2>/dev/null || echo "10.211.1.5")
           
           echo "🔍 Injecting MySQL IP: $MYSQL_PRIVATE_IP into MySQL external service"
           
