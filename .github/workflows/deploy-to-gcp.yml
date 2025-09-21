@@ -381,7 +381,8 @@ jobs:
 
       # Smart rebuild: Only build services that changed
       - name: Build and push Auth Service
-        if: steps.check_changes.outputs.AUTH_CHANGED == 'true'
+        # Temporarily force build to debug image pull issues
+        # if: steps.check_changes.outputs.AUTH_CHANGED == 'true'
         run: |
           echo "🔨 Building Auth Service (code changed)"
           docker build -f user_auth/Dockerfile \
@@ -394,7 +395,8 @@ jobs:
         run: echo "⏭️ Skipping Auth Service build (no code changes)"
 
       - name: Build and push Text Extraction Service
-        if: steps.check_changes.outputs.EXTRACTION_CHANGED == 'true'
+        # Temporarily force build to debug image pull issues
+        # if: steps.check_changes.outputs.EXTRACTION_CHANGED == 'true'
         run: |
           echo "🔨 Building Text Extraction Service (code changed)"
           docker build -f text_extraction/Dockerfile \
@@ -407,7 +409,8 @@ jobs:
         run: echo "⏭️ Skipping Text Extraction build (no code changes)"
 
       - name: Build and push Text Summarization Service
-        if: steps.check_changes.outputs.SUMMARIZATION_CHANGED == 'true'
+        # Temporarily force build to debug image pull issues
+        # if: steps.check_changes.outputs.SUMMARIZATION_CHANGED == 'true'
         run: |
           echo "🔨 Building Text Summarization Service (code changed)"
           docker build -f text_summarization/Dockerfile \
@@ -420,7 +423,8 @@ jobs:
         run: echo "⏭️ Skipping Text Summarization build (no code changes)"
 
       - name: Build and push Frontend
-        if: steps.check_changes.outputs.FRONTEND_CHANGED == 'true'
+        # Temporarily force build to debug image pull issues
+        # if: steps.check_changes.outputs.FRONTEND_CHANGED == 'true'
         run: |
           echo "🔨 Building Frontend (code changed)"
           docker build -f frontend/Dockerfile \
